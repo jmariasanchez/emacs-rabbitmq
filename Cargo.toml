@@ -1,0 +1,41 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rabbitmq-el/rabbitmq-emacs"
+
+[workspace.dependencies]
+rabbitmq-core = { path = "crates/rabbitmq-core" }
+rabbitmq-protocol = { path = "crates/rabbitmq-protocol" }
+rabbitmq-amqp091 = { path = "crates/rabbitmq-amqp091" }
+rabbitmq-amqp10 = { path = "crates/rabbitmq-amqp10" }
+rabbitmq-streams = { path = "crates/rabbitmq-streams" }
+rabbitmq-management = { path = "crates/rabbitmq-management" }
+rabbitmq-testkit = { path = "crates/rabbitmq-testkit" }
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tokio = { version = "1.54", features = ["full"] }
+futures = "0.3"
+base64 = "0.22"
+regex = "1"
+percent-encoding = "2"
+url = "2"
+lapin = "=4.12.3"
+rabbitmq-stream-client = "=0.11.0"
+fe2o3-amqp = "=0.18.4"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "query"] }
+rustls = "0.23"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true

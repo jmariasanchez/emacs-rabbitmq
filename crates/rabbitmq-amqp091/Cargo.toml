@@ -1,0 +1,18 @@
+[package]
+name = "rabbitmq-amqp091"
+description = "AMQP 0-9-1 adapter for rabbitmq-core built on lapin: sessions, channels, publishing with confirms, consumers, settlement ownership."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rabbitmq-core.workspace = true
+lapin.workspace = true
+tokio.workspace = true
+futures.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+rabbitmq-testkit.workspace = true

@@ -1,0 +1,18 @@
+[package]
+name = "rabbitmq-management"
+description = "Typed client for the RabbitMQ Management HTTP API."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rabbitmq-core.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+rabbitmq-testkit.workspace = true

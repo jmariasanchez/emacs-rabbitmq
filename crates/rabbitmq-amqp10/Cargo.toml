@@ -1,0 +1,17 @@
+[package]
+name = "rabbitmq-amqp10"
+description = "AMQP 1.0 adapter for RabbitMQ 4.x built on fe2o3-amqp: sessions, sender/receiver links, settlement, credit."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rabbitmq-core.workspace = true
+fe2o3-amqp = { workspace = true, features = ["rustls"] }
+tokio.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+rabbitmq-testkit.workspace = true
