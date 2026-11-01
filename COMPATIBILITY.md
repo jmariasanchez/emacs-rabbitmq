@@ -10,9 +10,9 @@ TLS, multi-node cluster, or protocol-conformance qualification.
 | Dimension | Current evidence or declaration |
 | --- | --- |
 | Broker | Single-node RabbitMQ 4.4.0 passing baseline only |
-| Operating system | macOS baseline, no established Linux/Windows qualification |
+| Operating system | macOS baseline (local), Ubuntu (GitHub Actions `ubuntu-latest`) for CI. No Windows qualification. |
 | Rust | Workspace declares `rust-version = "1.85"`, edition 2021. Full locked dependency MSRV is not separately verified here. |
-| Emacs | Package declares Emacs 29.1 and Transient 0.4. No comprehensive Emacs-version matrix. |
+| Emacs | Package declares Emacs 29.1 and Transient 0.4. CI runs bytecompile and unit ERT on Emacs 29.1, 29.4, 30.1 and snapshot. Integration ERT runs on Ubuntu's Emacs 29.3 only. |
 | Bridge contract | Protocol version 1 on both Rust and Lisp sides. Prefer matching revisions. |
 | AMQP 0-9-1 client | Manifest pins Lapin 4.12.3 |
 | AMQP 1.0 client | Manifest pins fe2o3-amqp 0.18.4 |

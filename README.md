@@ -1,5 +1,7 @@
 # rabbitmq.el
 
+[![CI](https://github.com/jmariasanchez/emacs-rabbitmq/actions/workflows/ci.yml/badge.svg)](https://github.com/jmariasanchez/emacs-rabbitmq/actions/workflows/ci.yml)
+
 An experimental Emacs interface to RabbitMQ, backed by a Rust stdio bridge.
 The bridge owns AMQP 0-9-1, AMQP 1.0, native Stream protocol, and Management
 HTTP API connections. Emacs provides profiles, tables, message buffers,

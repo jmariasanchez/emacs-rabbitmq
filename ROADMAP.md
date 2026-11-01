@@ -42,7 +42,9 @@ does not establish TLS, cluster, or conformance qualification.
 
 - [ ] Fill documented gaps between adapter/RPC methods and interactive UI flows.
 - [ ] Validate audit completeness, retention and redaction with adversarial data.
-- [ ] Add reproducible CI evidence and release/package checks.
+- [ ] Add reproducible CI evidence and release/package checks. CI (Rust, Emacs
+  29.1/29.4/30.1/snapshot, RabbitMQ 4.4 service lane) and a tag-driven release
+  workflow exist. Package-archive (MELPA) checks remain open.
 - [x] Establish repository identity and license texts (split GPL-3.0-or-later
   for Lisp, MIT OR Apache-2.0 for Rust).
 
