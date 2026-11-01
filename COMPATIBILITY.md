@@ -2,8 +2,8 @@
 
 ## Reported baseline
 
-As of this documentation snapshot, the supplied baseline is **84 Rust tests and
-17 ERT tests passed on macOS against a single RabbitMQ 4.4.0 node**. This is not
+As of this documentation snapshot, the supplied baseline is **87 Rust tests and
+21 ERT tests passed on macOS against a single RabbitMQ 4.4.0 node**. This is not
 a claim that this documentation change reran those suites, and not evidence of
 TLS, multi-node cluster, or protocol-conformance qualification.
 

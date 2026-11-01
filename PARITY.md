@@ -21,7 +21,7 @@ The project is experimental, not production ready, and its roadmap is unfinished
 
 1. **Implemented** means a code path exists in the checkout.
 2. **Existing test** means a named test exercises a particular path. See TESTING.md.
-3. **Reported passing baseline** means 84 Rust and 17 ERT tests passed on a single
+3. **Reported passing baseline** means 87 Rust and 21 ERT tests passed on a single
    RabbitMQ 4.4.0 node on macOS.
 4. **Qualified** would require an explicit environment, failure model, acceptance
    criteria, and retained evidence. TLS, clusters, and conformance are not qualified.

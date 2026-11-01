@@ -6,7 +6,7 @@ HTTP API connections. Emacs provides profiles, tables, message buffers,
 producer/consumer commands, topology tools, and administration menus.
 
 **Not production ready. The roadmap is not complete.** The reported baseline
-is **84 Rust tests and 17 ERT tests passed against one RabbitMQ 4.4.0 node on
+is **87 Rust tests and 21 ERT tests passed against one RabbitMQ 4.4.0 node on
 macOS**. This is not TLS, cluster, or protocol-conformance qualification.
 Protected-resource checks are incomplete, delivery notifications can be lost,
 consumer memory bounds are incomplete, AMQP 1.0 TLS is unsupported, and
@@ -57,7 +57,7 @@ scripts/test-broker.sh stop
 ```
 
 Read TESTING.md before running these commands: tests mutate broker resources,
-and ERT can skip integrations when the broker is absent. There is no Makefile.
+and ERT can skip integrations when the broker is absent. A Makefile provides build, test, bytecompile, ert, and check targets.
 The test broker script is not a hardened deployment recipe.
 
 ## Documentation

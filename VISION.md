@@ -6,7 +6,7 @@ visible rather than converted into apparent success.
 
 The implementation already connects an Emacs frontend to protocol-specific
 Rust adapters. It is experimental, not production ready, and does not complete
-the roadmap. The 84 Rust / 17 ERT passing baseline on single-node RabbitMQ 4.4.0
+the roadmap. The 87 Rust / 21 ERT passing baseline on single-node RabbitMQ 4.4.0
 on macOS is a starting point, not a qualification claim.
 
 ## Design principles

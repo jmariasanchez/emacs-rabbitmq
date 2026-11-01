@@ -2,16 +2,18 @@
 
 ## Baseline and limits
 
-The supplied baseline is **84 Rust tests and 17 ERT tests passed against one
-RabbitMQ 4.4.0 node on macOS**. It is not a claim of a fresh run by this
-documentation change. The implementation is experimental and not production
+The integrated run on November 1, 2026 passed **87 Rust tests and 21 ERT tests
+against one RabbitMQ 4.4.0 node on macOS**, with `RMQ_REQUIRE_BROKER=1` for Rust.
+Rust formatting and Emacs bytecompilation also passed. Clippy completed with
+warnings. The isolated test broker was stopped after validation. The implementation is experimental and not production
 ready. TLS, cluster behavior, and protocol conformance are **not qualified**.
 The mappings below are selected existing tests, not an exhaustive matrix.
 
 ## Commands that exist in this checkout
 
-Use an isolated broker and disposable data. There is no Makefile or documented
-CI result to substitute for actual suite output.
+Use an isolated broker and disposable data. `make check` runs build, Rust tests,
+bytecompilation, and non-integration ERT tests. The GitHub Actions workflow adds
+a RabbitMQ integration lane, but has not been executed on hosted infrastructure.
 
 ```sh
 # Build and run pure library tests without requiring a broker.

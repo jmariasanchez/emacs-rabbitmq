@@ -1,7 +1,7 @@
 # Roadmap
 
 **The roadmap is not complete.** The project is experimental and not production
-ready. Existing functionality and the 84 Rust / 17 ERT passing baseline on
+ready. Existing functionality and the 87 Rust / 21 ERT passing baseline on
 single-node RabbitMQ 4.4.0 on macOS do not close the work below.
 
 ## Implemented foundation

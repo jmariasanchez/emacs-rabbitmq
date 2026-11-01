@@ -39,7 +39,7 @@ read-only sessions, wrong delivery ownership, uncertain publishes, slow readers,
 resource limits, cancellation and cleanup when relevant. The planned checks in
 TESTING.md are future acceptance criteria, not a list of already passing tests.
 
-The supplied historical baseline is 84 Rust and 17 ERT tests passed on a single
+The supplied historical baseline is 87 Rust and 21 ERT tests passed on a single
 RabbitMQ 4.4.0 node on macOS. Do not imply TLS, cluster, or conformance coverage
 from that result, and do not claim a fresh run unless you actually performed it.
 

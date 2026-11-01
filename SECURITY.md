@@ -2,7 +2,7 @@
 
 **Experimental, not production ready.** Use disposable data and narrowly scoped
 broker credentials. The reported single-node RabbitMQ 4.4.0 macOS baseline
-(84 Rust and 17 ERT tests) is not a security audit, TLS qualification, cluster
+(87 Rust and 21 ERT tests) is not a security audit, TLS qualification, cluster
 qualification, or conformance assessment.
 
 ## Trust boundaries

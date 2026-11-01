@@ -39,7 +39,7 @@ these distinctions without claiming equivalence to other clients or tools.
 
 ## Evidence boundary
 
-The supplied baseline is 84 Rust tests and 17 ERT tests passed on macOS against
+The supplied baseline is 87 Rust tests and 21 ERT tests passed on macOS against
 a single RabbitMQ 4.4.0 node. The existing tests cover selected successful and
 failure paths. TESTING.md maps features to named tests and separately lists
 planned acceptance checks. It is deliberately not an exhaustive matrix.
