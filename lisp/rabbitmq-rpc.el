@@ -210,16 +210,22 @@ THEN is called with the result; ELSE with an error plist (see
                                             :message (format "%s timed out locally after %ss" m (or timeout rabbitmq-rpc-timeout)))))
           :timeout (or timeout rabbitmq-rpc-timeout)))))
 
+(defun rabbitmq-rpc--cancel-on-quit-supported-p ()
+  "Non-nil if `jsonrpc-request' accepts `:cancel-on-quit' (jsonrpc 1.0.30+)."
+  (let ((doc (documentation 'jsonrpc-request t)))
+    (and doc (string-match-p "CANCEL-ON-QUIT" doc))))
+
 (defun rabbitmq-rpc-call-sync (method params &optional timeout)
   "Call METHOD with PARAMS and wait for the result.
 Only for short observations (completion candidates, tests).  Signals
 `user-error' on failure."
   (condition-case err
-      (jsonrpc-request (rabbitmq-rpc-start)
-                       (if (symbolp method) method (intern method))
-                       (rabbitmq-rpc--normalize-params params)
-                       :timeout (or timeout rabbitmq-rpc-timeout)
-                       :cancel-on-quit #'rabbitmq-rpc-cancel)
+      (apply #'jsonrpc-request (rabbitmq-rpc-start)
+             (if (symbolp method) method (intern method))
+             (rabbitmq-rpc--normalize-params params)
+             :timeout (or timeout rabbitmq-rpc-timeout)
+             (and (rabbitmq-rpc--cancel-on-quit-supported-p)
+                  (list :cancel-on-quit #'rabbitmq-rpc-cancel)))
     (jsonrpc-error
      ;; ERR is (jsonrpc-error MSG (jsonrpc-error-code . C) (jsonrpc-error-data . D) ...)
      (let* ((alist (cddr err))
