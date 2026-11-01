@@ -112,14 +112,26 @@ METHOD \"*\" receives every notification as (FN NAME PARAMS)."
         rabbitmq-rpc--hello nil)
   (run-hooks 'rabbitmq-rpc-shutdown-hook))
 
+(defun rabbitmq-rpc--no-logging-initargs ()
+  "Return `jsonrpc-connection' initargs that disable traffic logging.
+jsonrpc 1.0.24+ (Emacs 30+) uses `:events-buffer-config'.  Older
+releases, including the one bundled with Emacs 29, only accept
+`:events-buffer-scrollback-size'."
+  (if (slot-exists-p 'jsonrpc-connection '-events-buffer-config)
+      (list :events-buffer-config '(:size 0))
+    (list :events-buffer-scrollback-size 0)))
+
 (defun rabbitmq-rpc-start ()
   "Start the bridge if needed and return the connection."
   (unless (rabbitmq-rpc-live-p)
     (let* ((program (rabbitmq-rpc-find-bridge))
-           (conn (make-instance
+           (conn (apply
+                  #'make-instance
                   'jsonrpc-process-connection
                   :name "rabbitmq-bridge"
-                  :events-buffer-config '(:size 0)
+                  (append
+                   (rabbitmq-rpc--no-logging-initargs)
+                   (list
                   :notification-dispatcher #'rabbitmq-rpc--dispatch-notification
                   :request-dispatcher #'ignore
                   :on-shutdown #'rabbitmq-rpc--on-shutdown
@@ -130,7 +142,7 @@ METHOD \"*\" receives every notification as (FN NAME PARAMS)."
                               :connection-type 'pipe
                               :coding 'utf-8-emacs-unix
                               :noquery t
-                              :stderr (get-buffer-create "*rabbitmq-bridge stderr*"))))))
+                              :stderr (get-buffer-create "*rabbitmq-bridge stderr*"))))))))
       (setq rabbitmq-rpc--connection conn)
       (let ((hello (jsonrpc-request conn 'bridge.hello (make-hash-table) :timeout 10)))
         (setq rabbitmq-rpc--hello hello)
