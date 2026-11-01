@@ -29,13 +29,21 @@ async fn main() {
         return;
     }
     if args.iter().any(|a| a == "--methods") {
+        use std::io::Write;
+        let mut out = std::io::stdout().lock();
         for m in methods::METHODS {
-            println!(
+            // Stop quietly if the reader goes away (e.g. `| head`).
+            if writeln!(
+                out,
                 "{:<34} {:<12} {}",
                 m.name,
                 methods::effect_name(m.effect),
                 m.summary
-            );
+            )
+            .is_err()
+            {
+                break;
+            }
         }
         return;
     }
