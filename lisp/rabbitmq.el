@@ -7,7 +7,6 @@
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "29.1") (transient "0.4"))
 ;; Keywords: tools, comm
-;; URL: https://github.com/rabbitmq-el/rabbitmq-emacs
 
 ;;; Commentary:
 

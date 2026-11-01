@@ -139,6 +139,7 @@ DROPPED is the bridge-reported drop count."
       (while (> (length rabbitmq-messages--order) rabbitmq-messages-max)
         (let ((old (pop rabbitmq-messages--order)))
           (remhash old rabbitmq-messages--table)
+          (remhash old rabbitmq-messages--settled)
           (cl-incf rabbitmq-messages--dropped)))
       (when (and dropped (numberp dropped))
         (setq rabbitmq-messages--dropped (max rabbitmq-messages--dropped dropped)))
@@ -209,6 +210,11 @@ Messages stay unacknowledged until settled unless AUTO-ACK."
       (puthash id (plist-put m :marked (equal "unsettled" (rabbitmq-messages--state m))) rabbitmq-messages--table)))
   (rabbitmq-messages--render))
 
+(defun rabbitmq-messages--record-settlement (id outcome)
+  "Record OUTCOME for ID only while its message remains in the view."
+  (when (gethash id rabbitmq-messages--table)
+    (puthash id outcome rabbitmq-messages--settled)))
+
 (defun rabbitmq-messages--settle (outcome label)
   (let* ((ids (rabbitmq-messages--marked))
          (buf (current-buffer))
@@ -220,18 +226,23 @@ Messages stay unacknowledged until settled unless AUTO-ACK."
     (when-let* ((ids091 (cdr (assoc "amqp091" by-kind))))
       (rabbitmq-call 'message.settle (list :ids (vconcat ids091) :outcome outcome)
                      :then (lambda (r)
-                             (with-current-buffer buf
+                             (when (buffer-live-p buf)
+                              (with-current-buffer buf
                                (dolist (s (rabbitmq--vec (plist-get r :settled)))
-                                 (puthash (plist-get s :id) (if (eq (plist-get s :settled) t) label "stale") rabbitmq-messages--settled))
+                                 (rabbitmq-messages--record-settlement (plist-get s :id) (if (eq (plist-get s :settled) t) label "stale")))
                                (dolist (e (rabbitmq--vec (plist-get r :errors)))
                                  (let ((code (plist-get (plist-get e :error) :code)))
-                                   (puthash (plist-get e :id) (if (equal code "stale_delivery") "stale" (format "error:%s" code)) rabbitmq-messages--settled)
+                                   (rabbitmq-messages--record-settlement (plist-get e :id) (if (equal code "stale_delivery") "stale" (format "error:%s" code)))
                                    (message "rabbitmq: %s" (plist-get (plist-get e :error) :message))))
-                               (rabbitmq-messages-unmark-all)))))
+                               (rabbitmq-messages-unmark-all))))))
     (dolist (id (cdr (assoc "amqp10" by-kind)))
       (let* ((src (plist-get (gethash id rabbitmq-messages--table) :source)))
         (rabbitmq-call 'amqp10.settle (list :link (plist-get src :link) :delivery_id (plist-get src :delivery_id) :outcome outcome)
-                       :then (lambda (_) (with-current-buffer buf (puthash id label rabbitmq-messages--settled) (rabbitmq-messages--render))))))))
+                       :then (lambda (_)
+                               (when (buffer-live-p buf)
+                                 (with-current-buffer buf
+                                   (rabbitmq-messages--record-settlement id label)
+                                   (rabbitmq-messages--render)))))))))
 
 (defun rabbitmq-messages-ack ()
   "Acknowledge (remove from the queue) the marked or current message(s)."
@@ -258,7 +269,10 @@ Messages stay unacknowledged until settled unless AUTO-ACK."
   (interactive)
   (setq rabbitmq-messages--order
         (cl-remove-if (lambda (id) (let ((s (rabbitmq-messages--state (gethash id rabbitmq-messages--table))))
-                                     (not (member s '("unsettled" "replayed")))))
+                                     (unless (member s '("unsettled" "replayed"))
+                                       (remhash id rabbitmq-messages--table)
+                                       (remhash id rabbitmq-messages--settled)
+                                       t)))
                       rabbitmq-messages--order))
   (rabbitmq-messages--render))
 
@@ -368,10 +382,12 @@ Messages stay unacknowledged until settled unless AUTO-ACK."
 (defun rabbitmq-messages-export (file)
   "Export messages in view to FILE as JSON lines."
   (interactive "FExport messages to: ")
-  (with-temp-file file
-    (dolist (id rabbitmq-messages--order)
-      (when-let* ((m (gethash id rabbitmq-messages--table)))
-        (insert (json-serialize m :null-object nil :false-object :json-false) "\n"))))
+  (let ((messages (mapcar (lambda (id) (gethash id rabbitmq-messages--table))
+                          rabbitmq-messages--order)))
+    (with-temp-file file
+      (dolist (m messages)
+        (when m
+          (insert (json-serialize m :null-object nil :false-object :json-false) "\n")))))
   (message "Exported %d message(s) to %s" (length rabbitmq-messages--order) file))
 
 (defun rabbitmq-messages-diff ()

@@ -160,6 +160,93 @@
   (let ((rabbitmq-bridge-program nil))
     (should (file-executable-p (rabbitmq-rpc-find-bridge)))))
 
+(ert-deftest rabbitmq-test-rpc-never-logs-secrets ()
+  (should (= (default-value 'rabbitmq-events-log-size) 0))
+  (let ((rabbitmq-rpc--connection nil)
+        (rabbitmq-rpc--hello nil)
+        (rabbitmq-events-log-size 2000)
+        (secret "ERT-password-do-not-retain")
+        conn initial-log)
+    (unwind-protect
+        (progn
+          (setq conn (rabbitmq-rpc-start))
+          (setq initial-log (with-current-buffer (jsonrpc-events-buffer conn)
+                              (buffer-string)))
+          ;; Exercise actual outbound and inbound transport without a broker.
+          (should (plist-get (rabbitmq-rpc-call-sync 'bridge.ping
+                                                   (list :password secret)) :pong))
+          (jsonrpc-connection-receive
+           conn (list :jsonrpc "2.0" :method "test.secret" :params (list :password secret)))
+          (with-current-buffer (jsonrpc-events-buffer conn)
+            (should-not (string-match-p secret (buffer-string)))
+            (should (equal (buffer-string) initial-log))))
+      (rabbitmq-rpc-stop)
+      (when conn (kill-buffer (jsonrpc-events-buffer conn))))))
+
+(ert-deftest rabbitmq-test-messages-export-buffer-locals ()
+  (let ((file (make-temp-file "rabbitmq-export-")))
+    (unwind-protect
+        (with-temp-buffer
+          (rabbitmq-messages-mode)
+          (setq rabbitmq-messages--order '("one" "two"))
+          (puthash "one" '(:id "one" :payload (:data "hello\nworld")) rabbitmq-messages--table)
+          (puthash "two" '(:id "two" :redelivered :json-false) rabbitmq-messages--table)
+          (rabbitmq-messages-export file)
+          (with-temp-buffer
+            (insert-file-contents file)
+            (let ((rows (mapcar (lambda (line) (json-parse-string line :object-type 'plist :false-object :json-false))
+                                (split-string (buffer-string) "\n" t))))
+              (should (equal (mapcar (lambda (row) (plist-get row :id)) rows) '("one" "two")))
+              (should (equal (plist-get (plist-get (car rows) :payload) :data) "hello\nworld"))
+              (should (eq (plist-get (cadr rows) :redelivered) :json-false)))))
+      (delete-file file))))
+
+(ert-deftest rabbitmq-test-messages-settlement-retention ()
+  (with-temp-buffer
+    (rabbitmq-messages-mode)
+    (setq rabbitmq-messages--source '(:title "test"))
+    (let ((rabbitmq-messages-max 1)
+          (rabbitmq--last-session "s")
+          (rabbitmq--sessions (make-hash-table :test #'equal)))
+      (puthash "s" '(:read_only :json-false) rabbitmq--sessions)
+      (rabbitmq-messages-add (current-buffer) '((:id "old")))
+      (rabbitmq-messages--record-settlement "old" "acked")
+      (rabbitmq-messages-add (current-buffer) '((:id "new")))
+      (should-not (gethash "old" rabbitmq-messages--settled))
+      (rabbitmq-messages--record-settlement "old" "acked")
+      (should (= (hash-table-count rabbitmq-messages--settled) 0))
+      (rabbitmq-messages--record-settlement "new" "acked")
+      (rabbitmq-messages-clear-settled)
+      (should-not rabbitmq-messages--order)
+      (should (= (hash-table-count rabbitmq-messages--table) 0))
+      (should (= (hash-table-count rabbitmq-messages--settled) 0))
+      (rabbitmq-messages-add (current-buffer) '((:id "new")))
+      (should (equal rabbitmq-messages--order '("new")))
+      (should (equal (rabbitmq-messages--state (gethash "new" rabbitmq-messages--table)) "unsettled")))))
+
+(ert-deftest rabbitmq-test-messages-late-settlement ()
+  (dolist (kind '("amqp091" "amqp10"))
+    (with-temp-buffer
+      (rabbitmq-messages-mode)
+      (setq rabbitmq-messages--source '(:title "test"))
+      (let ((rabbitmq-messages-max 1)
+            (rabbitmq--last-session "s")
+            (rabbitmq--sessions (make-hash-table :test #'equal))
+            callback)
+        (puthash "s" '(:read_only :json-false) rabbitmq--sessions)
+        (rabbitmq-messages-add (current-buffer)
+                              (list (list :id "old" :marked t :source (list :kind kind))))
+        (cl-letf (((symbol-function 'rabbitmq-call)
+                   (lambda (_method _params &rest args)
+                     (setq callback (plist-get args :then)))))
+          (rabbitmq-messages-ack))
+        (rabbitmq-messages-add (current-buffer) '((:id "new")))
+        (funcall callback '(:settled [(:id "old" :settled t)]
+                           :errors [(:id "old" :error (:code "stale_delivery" :message "stale"))]))
+        (should (= (hash-table-count rabbitmq-messages--settled) 0))
+        (kill-buffer (current-buffer))
+        (funcall callback '(:settled [(:id "old" :settled t)]))))))
+
 ;;;; Integration tests
 
 (ert-deftest rabbitmq-test-integration-handshake ()

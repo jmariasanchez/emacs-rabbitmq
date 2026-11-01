@@ -46,8 +46,9 @@ that time out are reported as uncertain."
   :type 'integer
   :group 'rabbitmq)
 
-(defcustom rabbitmq-events-log-size 2000
-  "Maximum number of entries kept in the JSON-RPC events buffer (0 disables)."
+(defcustom rabbitmq-events-log-size 0
+  "Legacy JSON-RPC log size, retained for configuration compatibility.
+Traffic logging is always disabled because requests contain credentials."
   :type 'integer
   :group 'rabbitmq)
 
@@ -118,7 +119,7 @@ METHOD \"*\" receives every notification as (FN NAME PARAMS)."
            (conn (make-instance
                   'jsonrpc-process-connection
                   :name "rabbitmq-bridge"
-                  :events-buffer-config `(:size ,rabbitmq-events-log-size :format full)
+                  :events-buffer-config '(:size 0)
                   :notification-dispatcher #'rabbitmq-rpc--dispatch-notification
                   :request-dispatcher #'ignore
                   :on-shutdown #'rabbitmq-rpc--on-shutdown
