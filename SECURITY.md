@@ -67,8 +67,10 @@ Never point tests or cleanup at a shared or production broker.
 
 ## Reporting sensitive problems
 
-No dedicated private reporting address or disclosure channel is established by
-this document. Use a maintainer-approved private channel if available. Do not
-post credentials, message bodies, private topology, or an exploitable production
+Report vulnerabilities privately through GitHub's private vulnerability
+reporting:
+<https://github.com/jmariasanchez/emacs-rabbitmq/security/advisories/new>.
+Do not open a public issue for them. Do not post credentials, message bodies,
+private topology, or an exploitable production
 configuration in a public issue. Include a sanitized reproduction against a
 disposable broker and identify the affected revision and transport.

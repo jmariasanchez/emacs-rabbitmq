@@ -34,11 +34,14 @@ EOF
 tarball="$out/rabbitmq-$version.tar"
 COPYFILE_DISABLE=1 tar --format=ustar -C "$stage" -cf "$tarball" "rabbitmq-$version"
 
-# Install into a throwaway package directory and load it.
+# Install into a throwaway package directory and load it. Refresh archive
+# contents first, as a user would: Emacs 29.1's package.el does not count the
+# bundled Transient as installed, so it fetches Transient from GNU ELPA.
 elpa="$stage/elpa"
 "$emacs" --batch -Q --eval "(progn
   (setq package-user-dir \"$elpa\")
   (package-initialize)
+  (package-refresh-contents)
   (package-install-file \"$tarball\")
   (require 'rabbitmq)
   (unless (and (featurep 'rabbitmq) (commandp 'rabbitmq-connect)

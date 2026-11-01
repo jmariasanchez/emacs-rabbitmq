@@ -57,8 +57,9 @@ jobs:
           version: "29.1"
       - name: Package and verify package-install
         run: |
-          tarball=$(scripts/package-lisp.sh dist | tail -1)
-          (cd dist && sha256sum "$(basename "$tarball")" > "$(basename "$tarball").sha256")
+          scripts/package-lisp.sh dist
+          cd dist
+          for f in rabbitmq-*.tar; do sha256sum "$f" > "$f.sha256"; done
       - uses: actions/upload-artifact@v4
         with:
           name: lisp
