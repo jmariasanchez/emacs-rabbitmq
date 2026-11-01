@@ -572,8 +572,9 @@ impl ManagementClient {
     async fn list<T: DeserializeOwned>(&self, path: &str, q: &ListQuery) -> Result<Value> {
         let raw: Value = self.get_query(path, &q.params()).await?;
         // Validate shape early so callers get a typed error, but return the raw
-        // JSON so pages and plain arrays share one RPC shape.
-        if raw.is_array() {
+        // JSON so pages and plain arrays share one RPC shape. A `columns`
+        // projection deliberately omits fields, so it is not validated.
+        if raw.is_array() && q.columns.is_none() {
             let _: Vec<T> = serde_json::from_value(raw.clone())
                 .map_err(|e| CoreError::new(ErrorCode::ManagementApi, format!("{path}: {e}")))?;
         }

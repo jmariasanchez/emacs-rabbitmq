@@ -133,6 +133,21 @@ async fn users_permissions_and_access_refused() {
 }
 
 #[tokio::test]
+async fn column_projection_is_not_rejected() {
+    let Some(p) = broker().await else { return };
+    let m = ManagementClient::from_profile(&p).unwrap();
+    let q = unique("cols");
+    m.declare_queue("/", &q, &json!({"durable": true})).await.unwrap();
+    let r = m
+        .queues(Some("/"), &ListQuery { columns: Some(vec!["name".into(), "type".into()]), ..Default::default() })
+        .await
+        .unwrap();
+    let row = r.as_array().unwrap().iter().find(|x| x["name"] == q.as_str()).expect("queue listed");
+    assert!(row.get("vhost").is_none(), "projection should omit other fields");
+    m.delete_queue("/", &q, false, false).await.unwrap();
+}
+
+#[tokio::test]
 async fn policies_roundtrip() {
     let Some(p) = broker().await else { return };
     let m = ManagementClient::from_profile(&p).unwrap();
