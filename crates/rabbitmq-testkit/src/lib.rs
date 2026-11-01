@@ -105,6 +105,18 @@ impl Admin {
             .as_u16()
     }
 
+    pub async fn post(&self, path: &str, body: serde_json::Value) -> u16 {
+        self.http
+            .post(self.url(path))
+            .basic_auth("guest", Some("guest"))
+            .json(&body)
+            .send()
+            .await
+            .expect("mgmt post")
+            .status()
+            .as_u16()
+    }
+
     pub async fn delete(&self, path: &str) -> u16 {
         self.http
             .delete(self.url(path))
