@@ -2082,6 +2082,7 @@ dependencies = [
 name = "rabbitmq-streams"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "futures",
  "rabbitmq-core",
  "rabbitmq-stream-client",
