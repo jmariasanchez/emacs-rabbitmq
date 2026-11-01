@@ -4,6 +4,8 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; Author: rabbitmq.el contributors
+;; Maintainer: Jose Sanchez <engineer@copydataai.com>
+;; URL: https://github.com/jmariasanchez/emacs-rabbitmq
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "29.1") (transient "0.4"))
 ;; Keywords: tools, comm

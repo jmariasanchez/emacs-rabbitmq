@@ -4,6 +4,7 @@ description = "JSON-RPC 2.0 stdio bridge exposing RabbitMQ operations to rabbitm
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 
 [[bin]]

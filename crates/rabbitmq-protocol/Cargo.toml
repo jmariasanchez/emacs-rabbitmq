@@ -4,6 +4,7 @@ description = "Versioned JSON-RPC 2.0 contract and Content-Length framing betwee
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]

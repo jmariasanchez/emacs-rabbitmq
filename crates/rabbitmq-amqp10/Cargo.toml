@@ -4,6 +4,7 @@ description = "AMQP 1.0 adapter for RabbitMQ 4.x built on fe2o3-amqp: sessions, 
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]

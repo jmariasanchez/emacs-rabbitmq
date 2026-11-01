@@ -43,8 +43,8 @@ does not establish TLS, cluster, or conformance qualification.
 - [ ] Fill documented gaps between adapter/RPC methods and interactive UI flows.
 - [ ] Validate audit completeness, retention and redaction with adversarial data.
 - [ ] Add reproducible CI evidence and release/package checks.
-- [ ] Reconcile repository identity metadata and license declarations with
-  maintainer decisions. Do not invent a URL or unified license in the meantime.
+- [x] Establish repository identity and license texts (split GPL-3.0-or-later
+  for Lisp, MIT OR Apache-2.0 for Rust).
 
 ## Release gate
 

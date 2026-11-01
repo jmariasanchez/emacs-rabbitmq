@@ -4,6 +4,7 @@ description = "RabbitMQ Streams adapter: native stream protocol publishing, offs
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]

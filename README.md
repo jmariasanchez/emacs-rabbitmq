@@ -16,9 +16,11 @@ cancellation semantics remain uncertain. See SECURITY.md and TESTING.md.
 
 The manifests declare Rust 1.85 and edition 2021. This is not a verified minimum
 toolchain for all locked dependencies. The Emacs package declares Emacs 29.1
-and Transient 0.4. Build from this checkout, with Cargo and a native C toolchain:
+and Transient 0.4. Build from a checkout, with Cargo and a native C toolchain:
 
 ```sh
+git clone https://github.com/jmariasanchez/emacs-rabbitmq.git
+cd emacs-rabbitmq
 cargo build --release --locked
 ./target/release/rabbitmq-bridge --version
 ./target/release/rabbitmq-bridge --methods
@@ -75,6 +77,13 @@ The test broker script is not a hardened deployment recipe.
 | ROADMAP.md | Unfinished work and exit criteria |
 | CONTRIBUTING.md | Change and evidence expectations |
 
-No canonical repository URL or unified license grant is established here.
-Cargo metadata and Lisp headers contain different license declarations. See
-CONTRIBUTING.md before redistribution.
+## License
+
+The project is split-licensed by component:
+
+- Emacs Lisp package (`lisp/`, `tests/ert/`): GPL-3.0-or-later, see
+  [COPYING](COPYING).
+- Rust bridge and crates (`crates/`): MIT OR Apache-2.0, at your option, see
+  [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE).
+
+Repository: <https://github.com/jmariasanchez/emacs-rabbitmq>

@@ -9,7 +9,9 @@ that are actually qualified. The roadmap is unfinished.
 Inspect `Cargo.toml`, `Cargo.lock`, the relevant crate, its tests, and the Lisp
 caller before changing an operation. Do not assume source comments describe
 complete behavior. Use the real scripts in TESTING.md, not stale `make` commands
-mentioned in older comments. No canonical remote URL is supplied here.
+mentioned in older comments. The canonical repository is
+<https://github.com/jmariasanchez/emacs-rabbitmq>. Report issues and open pull
+requests there.
 
 Keep patches focused and do not revert unrelated work. For changes touching RPC:
 
@@ -53,10 +55,9 @@ before attaching them to any report. SECURITY.md describes the current gaps.
 
 ## Licensing and provenance
 
-The workspace manifest declares `MIT OR Apache-2.0`; Lisp headers declare
-`GPL-3.0-or-later`. There is no root license text in the inspected checkout.
-This document does not create, reconcile, or replace those declarations and
-does not establish a unified project license. Preserve existing notices, track
-the origin of contributions, and obtain maintainer clarification before making
-redistribution or relicensing assumptions. Do not add a license or repository
-identity based on a guess.
+The project is split-licensed by component. The Emacs Lisp package (`lisp/`,
+`tests/ert/`) is GPL-3.0-or-later (COPYING). The Rust workspace (`crates/`) is
+`MIT OR Apache-2.0` (LICENSE-MIT, LICENSE-APACHE). The bridge is a separate
+program that talks to Emacs over stdio. Contributions are accepted under the
+license of the component they modify. Keep SPDX headers on new Lisp files and
+`license.workspace = true` on new crates.
