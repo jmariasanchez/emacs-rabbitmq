@@ -10,7 +10,11 @@ async fn overview_nodes_health() {
     let Some(p) = broker().await else { return };
     let m = ManagementClient::from_profile(&p).unwrap();
     let o = m.overview().await.unwrap();
-    assert!(o.rabbitmq_version.starts_with('4'), "{}", o.rabbitmq_version);
+    assert!(
+        o.rabbitmq_version.starts_with('4'),
+        "{}",
+        o.rabbitmq_version
+    );
     let nodes = m.nodes().await.unwrap();
     assert!(!nodes.is_empty() && nodes[0].running);
     let h = m.health().await.unwrap();
@@ -25,9 +29,19 @@ async fn queue_exchange_binding_lifecycle_and_topology() {
     let m = ManagementClient::from_profile(&p).unwrap();
     let q = unique("mq");
     let x = unique("mx");
-    m.declare_exchange("/", &x, &json!({"type": "topic", "durable": true})).await.unwrap();
-    m.declare_queue("/", &q, &json!({"durable": true, "arguments": {"x-queue-type": "quorum"}})).await.unwrap();
-    m.create_binding("/", &x, "queue", &q, "orders.#", &Map::new()).await.unwrap();
+    m.declare_exchange("/", &x, &json!({"type": "topic", "durable": true}))
+        .await
+        .unwrap();
+    m.declare_queue(
+        "/",
+        &q,
+        &json!({"durable": true, "arguments": {"x-queue-type": "quorum"}}),
+    )
+    .await
+    .unwrap();
+    m.create_binding("/", &x, "queue", &q, "orders.#", &Map::new())
+        .await
+        .unwrap();
 
     let info = m.queue("/", &q).await.unwrap();
     assert_eq!(info.queue_type(), "quorum");
@@ -54,7 +68,10 @@ async fn queue_exchange_binding_lifecycle_and_topology() {
     assert!(m.bindings_from("/", &x).await.unwrap().is_empty());
     m.delete_queue("/", &q, false, false).await.unwrap();
     m.delete_exchange("/", &x, false).await.unwrap();
-    assert_eq!(m.queue("/", &q).await.unwrap_err().code, ErrorCode::NotFound);
+    assert_eq!(
+        m.queue("/", &q).await.unwrap_err().code,
+        ErrorCode::NotFound
+    );
 }
 
 #[tokio::test]
@@ -63,7 +80,9 @@ async fn paging_and_filtering() {
     let m = ManagementClient::from_profile(&p).unwrap();
     let prefix = unique("page");
     for i in 0..3 {
-        m.declare_queue("/", &format!("{prefix}.{i}"), &json!({"durable": true})).await.unwrap();
+        m.declare_queue("/", &format!("{prefix}.{i}"), &json!({"durable": true}))
+            .await
+            .unwrap();
     }
     let page = m
         .queues(
@@ -82,7 +101,9 @@ async fn paging_and_filtering() {
     assert_eq!(page.filtered_count, 3);
     assert_eq!(page.items.len(), 2);
     for i in 0..3 {
-        m.delete_queue("/", &format!("{prefix}.{i}"), false, false).await.unwrap();
+        m.delete_queue("/", &format!("{prefix}.{i}"), false, false)
+            .await
+            .unwrap();
     }
 }
 
@@ -91,7 +112,9 @@ async fn definitions_export_and_diff() {
     let Some(p) = broker().await else { return };
     let m = ManagementClient::from_profile(&p).unwrap();
     let q = unique("defs");
-    m.declare_queue("/", &q, &json!({"durable": true})).await.unwrap();
+    m.declare_queue("/", &q, &json!({"durable": true}))
+        .await
+        .unwrap();
     let defs = m.export_definitions(Some("/")).await.unwrap();
     let from_defs = topology_from_definitions(&defs, None);
     assert!(from_defs.queues.iter().any(|x| x.name == q));
@@ -106,12 +129,20 @@ async fn users_permissions_and_access_refused() {
     let Some(p) = broker().await else { return };
     let m = ManagementClient::from_profile(&p).unwrap();
     let user = unique("user");
-    m.put_user(&user, Some("pw-123"), "monitoring").await.unwrap();
-    m.set_permissions("/", &user, "^$", "^$", ".*").await.unwrap();
+    m.put_user(&user, Some("pw-123"), "monitoring")
+        .await
+        .unwrap();
+    m.set_permissions("/", &user, "^$", "^$", ".*")
+        .await
+        .unwrap();
     let perms = m.user_permissions(&user).await.unwrap();
     assert_eq!(perms[0].configure, "^$");
     let users = serde_json::to_value(m.users().await.unwrap()).unwrap();
-    assert!(users.as_array().unwrap().iter().all(|u| u.get("password_hash").is_none()));
+    assert!(users
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|u| u.get("password_hash").is_none()));
 
     // The restricted user can read but not declare.
     let mut rp = p.clone();
@@ -119,8 +150,17 @@ async fn users_permissions_and_access_refused() {
     rp.password = rabbitmq_core::profile::Secret::new("pw-123");
     let rm = ManagementClient::from_profile(&rp).unwrap();
     rm.overview().await.unwrap();
-    let e = rm.declare_queue("/", &unique("denied"), &json!({"durable": true})).await.unwrap_err();
-    assert!(matches!(e.code, ErrorCode::AccessRefused | ErrorCode::AuthenticationFailed), "{e:?}");
+    let e = rm
+        .declare_queue("/", &unique("denied"), &json!({"durable": true}))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            e.code,
+            ErrorCode::AccessRefused | ErrorCode::AuthenticationFailed
+        ),
+        "{e:?}"
+    );
 
     // Wrong password -> authentication_failed, and no secret in the message.
     rp.password = rabbitmq_core::profile::Secret::new("wrong-secret");
@@ -137,13 +177,29 @@ async fn column_projection_is_not_rejected() {
     let Some(p) = broker().await else { return };
     let m = ManagementClient::from_profile(&p).unwrap();
     let q = unique("cols");
-    m.declare_queue("/", &q, &json!({"durable": true})).await.unwrap();
-    let r = m
-        .queues(Some("/"), &ListQuery { columns: Some(vec!["name".into(), "type".into()]), ..Default::default() })
+    m.declare_queue("/", &q, &json!({"durable": true}))
         .await
         .unwrap();
-    let row = r.as_array().unwrap().iter().find(|x| x["name"] == q.as_str()).expect("queue listed");
-    assert!(row.get("vhost").is_none(), "projection should omit other fields");
+    let r = m
+        .queues(
+            Some("/"),
+            &ListQuery {
+                columns: Some(vec!["name".into(), "type".into()]),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let row = r
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["name"] == q.as_str())
+        .expect("queue listed");
+    assert!(
+        row.get("vhost").is_none(),
+        "projection should omit other fields"
+    );
     m.delete_queue("/", &q, false, false).await.unwrap();
 }
 
@@ -161,8 +217,19 @@ async fn policies_roundtrip() {
         priority: 1,
     };
     m.put_policy(&pol).await.unwrap();
-    assert!(m.policies(Some("/")).await.unwrap().iter().any(|x| x.name == name));
+    assert!(m
+        .policies(Some("/"))
+        .await
+        .unwrap()
+        .iter()
+        .any(|x| x.name == name));
     m.delete_policy("/", &name).await.unwrap();
     let admin = Admin::new(&p);
-    assert!(admin.get("policies/%2F").await.as_array().unwrap().iter().all(|x| x["name"] != name.as_str()));
+    assert!(admin
+        .get("policies/%2F")
+        .await
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|x| x["name"] != name.as_str()));
 }

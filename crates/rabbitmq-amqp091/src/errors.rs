@@ -14,9 +14,11 @@ pub fn map(e: &lapin::Error, what: &str) -> CoreError {
             }
             err
         }
-        ErrorKind::IOError(io) => CoreError::new(ErrorCode::ConnectionFailed, format!("{what}: {io}"))
-            .retryable(what == "connect")
-            .with_hint("Check host, port, TLS settings, and that the broker is running."),
+        ErrorKind::IOError(io) => {
+            CoreError::new(ErrorCode::ConnectionFailed, format!("{what}: {io}"))
+                .retryable(what == "connect")
+                .with_hint("Check host, port, TLS settings, and that the broker is running.")
+        }
         ErrorKind::InvalidChannelState(state, _) => CoreError::new(
             ErrorCode::ChannelClosed,
             format!("{what}: channel is {state:?}"),
@@ -25,15 +27,17 @@ pub fn map(e: &lapin::Error, what: &str) -> CoreError {
             ErrorCode::ConnectionFailed,
             format!("{what}: connection is {state:?}"),
         ),
-        ErrorKind::MissingHeartbeatError => {
-            CoreError::new(ErrorCode::ConnectionFailed, format!("{what}: missed broker heartbeats"))
-        }
+        ErrorKind::MissingHeartbeatError => CoreError::new(
+            ErrorCode::ConnectionFailed,
+            format!("{what}: missed broker heartbeats"),
+        ),
         ErrorKind::AuthProviderError(m) => {
             CoreError::new(ErrorCode::AuthenticationFailed, format!("{what}: {m}"))
         }
-        ErrorKind::ChannelsLimitReached => {
-            CoreError::new(ErrorCode::LimitExceeded, format!("{what}: channel limit reached"))
-        }
+        ErrorKind::ChannelsLimitReached => CoreError::new(
+            ErrorCode::LimitExceeded,
+            format!("{what}: channel limit reached"),
+        ),
         other => CoreError::new(ErrorCode::Protocol, format!("{what}: {other:?}")),
     }
 }
@@ -43,6 +47,8 @@ pub fn map(e: &lapin::Error, what: &str) -> CoreError {
 pub fn is_pre_send(e: &lapin::Error) -> bool {
     matches!(
         e.kind(),
-        ErrorKind::InvalidChannelState(..) | ErrorKind::InvalidConnectionState(_) | ErrorKind::ChannelsLimitReached
+        ErrorKind::InvalidChannelState(..)
+            | ErrorKind::InvalidConnectionState(_)
+            | ErrorKind::ChannelsLimitReached
     )
 }

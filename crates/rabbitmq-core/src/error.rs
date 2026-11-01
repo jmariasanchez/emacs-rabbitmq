@@ -254,8 +254,14 @@ mod tests {
 
     #[test]
     fn reply_code_mapping() {
-        assert_eq!(CoreError::from_amqp_reply(406, "x").code, ErrorCode::PreconditionFailed);
-        assert_eq!(CoreError::from_amqp_reply(403, "x").code, ErrorCode::AccessRefused);
+        assert_eq!(
+            CoreError::from_amqp_reply(406, "x").code,
+            ErrorCode::PreconditionFailed
+        );
+        assert_eq!(
+            CoreError::from_amqp_reply(403, "x").code,
+            ErrorCode::AccessRefused
+        );
         assert!(CoreError::from_amqp_reply(406, "x").hint.is_some());
     }
 

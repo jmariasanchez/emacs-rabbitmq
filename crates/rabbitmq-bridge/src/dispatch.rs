@@ -21,14 +21,39 @@ pub fn to_rpc_error(e: &CoreError) -> RpcError {
 /// Handle one inbound message. Requests are spawned as tasks so slow broker
 /// operations never block the read loop; `$/cancelRequest` aborts them.
 pub async fn dispatch(state: &Arc<State>, msg: Incoming) {
+    if msg.jsonrpc.as_deref() != Some("2.0")
+        || msg.method.is_none()
+        || msg.result.is_some()
+        || msg.error.is_some()
+    {
+        state.outbox.respond(Response::err(
+            msg.id,
+            RpcError::new(RpcError::INVALID_REQUEST, "expected a JSON-RPC 2.0 request"),
+        ));
+        return;
+    }
+    if msg.params.as_ref().is_some_and(|p| !p.is_object()) {
+        if let Some(id) = msg.id {
+            state.outbox.respond(Response::err(
+                Some(id),
+                RpcError::new(RpcError::INVALID_PARAMS, "params must be an object"),
+            ));
+        }
+        return;
+    }
     let Some(method) = msg.method.clone() else {
         // Responses from the client (we never send requests) are ignored.
         return;
     };
-    let params = msg.params.clone().unwrap_or(Value::Object(Default::default()));
+    let params = msg
+        .params
+        .clone()
+        .unwrap_or(Value::Object(Default::default()));
 
     if method == CANCEL_METHOD {
-        let id: Option<RequestId> = params.get("id").and_then(|v| serde_json::from_value(v.clone()).ok());
+        let id: Option<RequestId> = params
+            .get("id")
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
         if let Some(id) = id {
             cancel(state, id);
         }
@@ -40,14 +65,39 @@ pub async fn dispatch(state: &Arc<State>, msg: Incoming) {
         return;
     };
 
+    if state
+        .inflight
+        .lock()
+        .map(|i| i.contains_key(&id))
+        .unwrap_or(true)
+    {
+        state.outbox.respond(Response::err(
+            Some(id),
+            RpcError::new(RpcError::INVALID_REQUEST, "request id is already in flight"),
+        ));
+        return;
+    }
+
     let Some(spec) = methods::find(&method) else {
-        state.outbox.respond(Response::err(Some(id), RpcError::new(RpcError::METHOD_NOT_FOUND, format!("unknown method {method}"))));
+        state.outbox.respond(Response::err(
+            Some(id),
+            RpcError::new(
+                RpcError::METHOD_NOT_FOUND,
+                format!("unknown method {method}"),
+            ),
+        ));
         return;
     };
 
     if state.inflight.lock().map(|i| i.len()).unwrap_or(0) >= MAX_INFLIGHT {
-        let e = CoreError::new(ErrorCode::LimitExceeded, format!("more than {MAX_INFLIGHT} requests in flight")).retryable(true);
-        state.outbox.respond(Response::err(Some(id), to_rpc_error(&e)));
+        let e = CoreError::new(
+            ErrorCode::LimitExceeded,
+            format!("more than {MAX_INFLIGHT} requests in flight"),
+        )
+        .retryable(true);
+        state
+            .outbox
+            .respond(Response::err(Some(id), to_rpc_error(&e)));
         return;
     }
 
@@ -60,7 +110,11 @@ pub async fn dispatch(state: &Arc<State>, msg: Incoming) {
         let _ = registered_rx.await;
         let result = run(&st, spec, &method, &params).await;
         // Remove from inflight before responding so a late cancel is a no-op.
-        let was_inflight = st.inflight.lock().map(|mut i| i.remove(&rid).is_some()).unwrap_or(true);
+        let was_inflight = st
+            .inflight
+            .lock()
+            .map(|mut i| i.remove(&rid).is_some())
+            .unwrap_or(true);
         if !was_inflight {
             return; // cancelled: the cancel path already responded
         }
@@ -79,42 +133,88 @@ fn cancel(state: &Arc<State>, id: RequestId) {
     let entry = state.inflight.lock().ok().and_then(|mut i| i.remove(&id));
     if let Some((handle, method)) = entry {
         handle.abort();
-        let effect = methods::find(method).map(|m| m.effect).unwrap_or(Effect::Observe);
+        let effect = methods::find(method)
+            .map(|m| m.effect)
+            .unwrap_or(Effect::Observe);
         // Cancelling an intervention after it may have reached the broker is
         // ambiguous: say so rather than implying nothing happened.
-        let e = CoreError::new(ErrorCode::Cancelled, format!("{method} cancelled by client"))
-            .ambiguous(effect.is_intervention());
+        let e = CoreError::new(
+            ErrorCode::Cancelled,
+            format!("{method} cancelled by client"),
+        )
+        .ambiguous(effect.is_intervention());
         if effect.is_intervention() {
             if let Ok(mut a) = state.audit.lock() {
-                a.record("?", method, effect, None, AuditOutcome::Uncertain, Some("cancelled".into()), &Value::Null);
+                a.record(
+                    "?",
+                    method,
+                    effect,
+                    None,
+                    AuditOutcome::Uncertain,
+                    Some("cancelled".into()),
+                    &Value::Null,
+                );
             }
         }
-        state.outbox.respond(Response::err(Some(id), RpcError { code: RpcError::CANCELLED, message: e.message.clone(), data: serde_json::to_value(&e).ok() }));
+        state.outbox.respond(Response::err(
+            Some(id),
+            RpcError {
+                code: RpcError::CANCELLED,
+                message: e.message.clone(),
+                data: serde_json::to_value(&e).ok(),
+            },
+        ));
     }
 }
 
-async fn run(state: &Arc<State>, spec: &'static methods::Method, method: &str, params: &Value) -> Result<Value, CoreError> {
+async fn run(
+    state: &Arc<State>,
+    spec: &'static methods::Method,
+    method: &str,
+    params: &Value,
+) -> Result<Value, CoreError> {
     // Safety gate. Session-less bridge methods are always observations.
-    let session_id = params.get("session").and_then(Value::as_str).map(String::from);
+    let session_id = params
+        .get("session")
+        .and_then(Value::as_str)
+        .map(String::from);
     let session = match &session_id {
-        Some(id) if !method.starts_with("session.open") => state.sessions.lock().await.get(id).cloned(),
+        Some(id) if !method.starts_with("session.open") => {
+            state.sessions.lock().await.get(id).cloned()
+        }
         _ => None,
     };
-    let resource = session.as_ref().and_then(|s| spec.resource(params, &s.profile.vhost));
-    let profile_name = session.as_ref().map(|s| s.profile.name.clone()).unwrap_or_default();
+    let resource = session
+        .as_ref()
+        .and_then(|s| spec.resource(params, &s.profile.vhost));
+    let profile_name = session
+        .as_ref()
+        .map(|s| s.profile.name.clone())
+        .unwrap_or_default();
 
     if let Some(sess) = &session {
         let intent = Intent {
             method,
             effect: spec.effect,
             resource: resource.clone(),
-            consent: params.get("consent").and_then(Value::as_bool).unwrap_or(false),
+            consent: params
+                .get("consent")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
             confirm: params.get("confirm").and_then(Value::as_str),
         };
         if let Err(e) = sess.profile.safety().check(&intent) {
             if spec.effect.is_intervention() {
                 if let Ok(mut a) = state.audit.lock() {
-                    a.record(&profile_name, method, spec.effect, resource.clone(), AuditOutcome::Denied, Some(e.message.clone()), params);
+                    a.record(
+                        &profile_name,
+                        method,
+                        spec.effect,
+                        resource.clone(),
+                        AuditOutcome::Denied,
+                        Some(e.message.clone()),
+                        params,
+                    );
                 }
             }
             return Err(e);
@@ -127,15 +227,33 @@ async fn run(state: &Arc<State>, spec: &'static methods::Method, method: &str, p
         let outcome = match &r {
             Ok(v) => {
                 // A publish where anything is uncertain is recorded as uncertain.
-                let uncertain = v.pointer("/summary/uncertain").and_then(Value::as_u64).unwrap_or(0) > 0;
-                if uncertain { AuditOutcome::Uncertain } else { AuditOutcome::Succeeded }
+                let uncertain = v
+                    .pointer("/summary/uncertain")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0)
+                    > 0;
+                if uncertain {
+                    AuditOutcome::Uncertain
+                } else {
+                    AuditOutcome::Succeeded
+                }
             }
             Err(e) if e.ambiguous => AuditOutcome::Uncertain,
             Err(_) => AuditOutcome::Failed,
         };
         if let Ok(mut a) = state.audit.lock() {
-            let rec = a.record(&profile_name, method, spec.effect, resource, outcome, r.as_ref().err().map(|e| e.message.clone()), params);
-            state.outbox.notify("$/audit", serde_json::to_value(rec).unwrap_or(Value::Null));
+            let rec = a.record(
+                &profile_name,
+                method,
+                spec.effect,
+                resource,
+                outcome,
+                r.as_ref().err().map(|e| e.message.clone()),
+                params,
+            );
+            state
+                .outbox
+                .notify("$/audit", serde_json::to_value(rec).unwrap_or(Value::Null));
         }
     }
     r

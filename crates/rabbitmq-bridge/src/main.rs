@@ -21,21 +21,49 @@ use tokio::io::BufReader;
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--version" || a == "-V") {
-        println!("rabbitmq-bridge {} (protocol {})", env!("CARGO_PKG_VERSION"), rabbitmq_protocol::PROTOCOL_VERSION);
+        println!(
+            "rabbitmq-bridge {} (protocol {})",
+            env!("CARGO_PKG_VERSION"),
+            rabbitmq_protocol::PROTOCOL_VERSION
+        );
         return;
     }
     if args.iter().any(|a| a == "--methods") {
         for m in methods::METHODS {
-            println!("{:<34} {:<12} {}", m.name, methods::effect_name(m.effect), m.summary);
+            println!(
+                "{:<34} {:<12} {}",
+                m.name,
+                methods::effect_name(m.effect),
+                m.summary
+            );
         }
         return;
     }
-    let arg = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
+    let arg = |flag: &str| {
+        args.iter()
+            .position(|a| a == flag)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
 
-    let filter = tracing_subscriber::EnvFilter::try_from_env("RABBITMQ_BRIDGE_LOG").unwrap_or_else(|_| "warn".into());
-    match arg("--log-file").and_then(|p| std::fs::OpenOptions::new().create(true).append(true).open(p).ok()) {
-        Some(f) => tracing_subscriber::fmt().with_env_filter(filter).with_writer(std::sync::Mutex::new(f)).with_ansi(false).init(),
-        None => tracing_subscriber::fmt().with_env_filter(filter).with_writer(std::io::stderr).init(),
+    let filter = tracing_subscriber::EnvFilter::try_from_env("RABBITMQ_BRIDGE_LOG")
+        .unwrap_or_else(|_| "warn".into());
+    match arg("--log-file").and_then(|p| {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(p)
+            .ok()
+    }) {
+        Some(f) => tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_writer(std::sync::Mutex::new(f))
+            .with_ansi(false)
+            .init(),
+        None => tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_writer(std::io::stderr)
+            .init(),
     }
 
     let mut audit = AuditLog::new(1000);
@@ -59,14 +87,21 @@ async fn main() {
                 break;
             }
             Err(e) => {
-                outbox.respond(Response::err(None, RpcError::new(RpcError::PARSE_ERROR, e.to_string())));
-                continue;
+                outbox.respond(Response::err(
+                    None,
+                    RpcError::new(RpcError::PARSE_ERROR, e.to_string()),
+                ));
+                // The body boundary is unknown after a framing error.
+                break;
             }
         };
         let msg: Incoming = match serde_json::from_slice(&frame) {
             Ok(m) => m,
             Err(e) => {
-                outbox.respond(Response::err(None, RpcError::new(RpcError::PARSE_ERROR, format!("invalid JSON: {e}"))));
+                outbox.respond(Response::err(
+                    None,
+                    RpcError::new(RpcError::PARSE_ERROR, format!("invalid JSON: {e}")),
+                ));
                 continue;
             }
         };

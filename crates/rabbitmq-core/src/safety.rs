@@ -161,7 +161,10 @@ impl SafetyPolicy {
         if self.read_only {
             return Err(CoreError::new(
                 ErrorCode::ReadOnlyProfile,
-                format!("{} is not permitted: the profile is read-only", intent.method),
+                format!(
+                    "{} is not permitted: the profile is read-only",
+                    intent.method
+                ),
             )
             .with_hint("Use a profile without :read-only to perform interventions."));
         }
@@ -229,7 +232,11 @@ mod tests {
         Intent {
             method: "test",
             effect,
-            resource: Some(Resource::new("queue", Some("/"), Box::leak(name.to_string().into_boxed_str()))),
+            resource: Some(Resource::new(
+                "queue",
+                Some("/"),
+                Box::leak(name.to_string().into_boxed_str()),
+            )),
             consent: false,
             confirm: None,
         }
@@ -248,15 +255,30 @@ mod tests {
 
     #[test]
     fn observe_always_allowed() {
-        let p = SafetyPolicy { read_only: true, protected: vec![] };
+        let p = SafetyPolicy {
+            read_only: true,
+            protected: vec![],
+        };
         assert!(p.check(&intent(Effect::Observe, "q")).is_ok());
     }
 
     #[test]
     fn read_only_blocks_interventions() {
-        let p = SafetyPolicy { read_only: true, protected: vec![] };
-        for e in [Effect::Consume, Effect::Settle, Effect::Publish, Effect::Write, Effect::Destructive] {
-            assert_eq!(p.check(&intent(e, "q")).unwrap_err().code, ErrorCode::ReadOnlyProfile);
+        let p = SafetyPolicy {
+            read_only: true,
+            protected: vec![],
+        };
+        for e in [
+            Effect::Consume,
+            Effect::Settle,
+            Effect::Publish,
+            Effect::Write,
+            Effect::Destructive,
+        ] {
+            assert_eq!(
+                p.check(&intent(e, "q")).unwrap_err().code,
+                ErrorCode::ReadOnlyProfile
+            );
         }
     }
 
@@ -264,7 +286,10 @@ mod tests {
     fn consume_requires_consent() {
         let p = SafetyPolicy::default();
         let mut i = intent(Effect::Consume, "q");
-        assert_eq!(p.check(&i).unwrap_err().code, ErrorCode::ConfirmationRequired);
+        assert_eq!(
+            p.check(&i).unwrap_err().code,
+            ErrorCode::ConfirmationRequired
+        );
         i.consent = true;
         assert!(p.check(&i).is_ok());
     }
@@ -285,14 +310,27 @@ mod tests {
         let p = SafetyPolicy {
             read_only: false,
             protected: vec![
-                ProtectedRule { kind: Some("queue".into()), vhost: None, name: "prod.*".into(), protection: Protection::NoDestructive },
-                ProtectedRule { kind: None, vhost: Some("/".into()), name: "audit".into(), protection: Protection::ReadOnly },
+                ProtectedRule {
+                    kind: Some("queue".into()),
+                    vhost: None,
+                    name: "prod.*".into(),
+                    protection: Protection::NoDestructive,
+                },
+                ProtectedRule {
+                    kind: None,
+                    vhost: Some("/".into()),
+                    name: "audit".into(),
+                    protection: Protection::ReadOnly,
+                },
             ],
         };
         let mut i = intent(Effect::Destructive, "prod.orders");
         i.confirm = Some("prod.orders");
         assert_eq!(p.check(&i).unwrap_err().code, ErrorCode::ProtectedResource);
         assert!(p.check(&intent(Effect::Publish, "prod.orders")).is_ok());
-        assert_eq!(p.check(&intent(Effect::Publish, "audit")).unwrap_err().code, ErrorCode::ProtectedResource);
+        assert_eq!(
+            p.check(&intent(Effect::Publish, "audit")).unwrap_err().code,
+            ErrorCode::ProtectedResource
+        );
     }
 }

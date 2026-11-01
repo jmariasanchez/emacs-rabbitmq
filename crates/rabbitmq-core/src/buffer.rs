@@ -113,7 +113,10 @@ impl AuditLog {
 
     /// Additionally append JSON lines to `path`.
     pub fn with_file(mut self, path: &std::path::Path) -> std::io::Result<Self> {
-        let f = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
+        let f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?;
         self.sink = Some(f);
         Ok(self)
     }
@@ -164,8 +167,15 @@ fn strip_payloads(v: &Value) -> Value {
             m.iter()
                 .map(|(k, v)| {
                     if k == "payload" {
-                        let size = v.get("data").and_then(Value::as_str).map(str::len).unwrap_or(0);
-                        (k.clone(), serde_json::json!({ "omitted": true, "encoded_size": size }))
+                        let size = v
+                            .get("data")
+                            .and_then(Value::as_str)
+                            .map(str::len)
+                            .unwrap_or(0);
+                        (
+                            k.clone(),
+                            serde_json::json!({ "omitted": true, "encoded_size": size }),
+                        )
                     } else {
                         (k.clone(), strip_payloads(v))
                     }

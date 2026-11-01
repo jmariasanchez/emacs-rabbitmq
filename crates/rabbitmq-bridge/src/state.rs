@@ -50,7 +50,10 @@ pub struct BridgeSession {
 
 impl BridgeSession {
     pub fn new(id: String, profile: Profile, sink: SharedSink) -> Self {
-        let mgmt = profile.management_url.as_ref().and_then(|_| ManagementClient::from_profile(&profile).ok());
+        let mgmt = profile
+            .management_url
+            .as_ref()
+            .and_then(|_| ManagementClient::from_profile(&profile).ok());
         Self {
             id,
             profile,
@@ -66,7 +69,9 @@ impl BridgeSession {
 
     pub async fn amqp(&self) -> Result<Arc<Amqp091>> {
         self.amqp
-            .get_or_try_init(|| Amqp091::connect(self.id.clone(), self.profile.clone(), self.sink.clone()))
+            .get_or_try_init(|| {
+                Amqp091::connect(self.id.clone(), self.profile.clone(), self.sink.clone())
+            })
             .await
             .cloned()
     }
@@ -77,22 +82,31 @@ impl BridgeSession {
 
     pub async fn stream(&self) -> Result<Arc<StreamSession>> {
         self.stream
-            .get_or_try_init(|| StreamSession::connect(self.id.clone(), self.profile.clone(), self.sink.clone()))
+            .get_or_try_init(|| {
+                StreamSession::connect(self.id.clone(), self.profile.clone(), self.sink.clone())
+            })
             .await
             .cloned()
     }
 
     pub async fn amqp10(&self) -> Result<Arc<Amqp10Session>> {
         self.amqp10
-            .get_or_try_init(|| Amqp10Session::connect(self.id.clone(), self.profile.clone(), self.sink.clone()))
+            .get_or_try_init(|| {
+                Amqp10Session::connect(self.id.clone(), self.profile.clone(), self.sink.clone())
+            })
             .await
             .cloned()
     }
 
     pub fn mgmt(&self) -> Result<&ManagementClient> {
         self.mgmt.as_ref().ok_or_else(|| {
-            CoreError::unsupported(format!("session {} has no Management API configured", self.id))
-                .with_hint("Add :management-url to the profile to use administration and monitoring features.")
+            CoreError::unsupported(format!(
+                "session {} has no Management API configured",
+                self.id
+            ))
+            .with_hint(
+                "Add :management-url to the profile to use administration and monitoring features.",
+            )
         })
     }
 
@@ -146,7 +160,10 @@ pub struct State {
 
 impl State {
     pub fn new(outbox: Outbox, audit: AuditLog) -> Arc<Self> {
-        let sink = Arc::new(RecordingSink { outbox: outbox.clone(), recent: StdMutex::new(BoundedBuffer::new(500)) });
+        let sink = Arc::new(RecordingSink {
+            outbox: outbox.clone(),
+            recent: StdMutex::new(BoundedBuffer::new(500)),
+        });
         Arc::new(Self {
             outbox,
             sink,
@@ -158,12 +175,10 @@ impl State {
     }
 
     pub async fn session(&self, id: &str) -> Result<Arc<BridgeSession>> {
-        self.sessions
-            .lock()
-            .await
-            .get(id)
-            .cloned()
-            .ok_or_else(|| CoreError::new(ErrorCode::NotFound, format!("no session {id}")).with_hint("Open one with session.open"))
+        self.sessions.lock().await.get(id).cloned().ok_or_else(|| {
+            CoreError::new(ErrorCode::NotFound, format!("no session {id}"))
+                .with_hint("Open one with session.open")
+        })
     }
 
     pub fn shared_sink(&self) -> SharedSink {

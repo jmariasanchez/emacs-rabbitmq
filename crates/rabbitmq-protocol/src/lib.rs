@@ -23,6 +23,7 @@ pub const PROTOCOL_VERSION: u32 = 1;
 
 /// Hard upper bound on a single frame to protect the bridge from a runaway peer.
 pub const MAX_FRAME_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_HEADER_BYTES: usize = 8 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -163,9 +164,18 @@ pub enum FrameError {
 pub async fn read_frame<R: AsyncBufRead + Unpin>(r: &mut R) -> Result<Vec<u8>, FrameError> {
     let mut len: Option<usize> = None;
     let mut line = String::new();
+    let mut header_bytes = 0usize;
     loop {
         line.clear();
-        let n = r.read_line(&mut line).await?;
+        // Limit the read itself, not just the resulting allocation.
+        let n = r
+            .take((MAX_HEADER_BYTES - header_bytes + 1) as u64)
+            .read_line(&mut line)
+            .await?;
+        header_bytes += n;
+        if header_bytes > MAX_HEADER_BYTES {
+            return Err(FrameError::Header("header exceeds limit".into()));
+        }
         if n == 0 {
             return Err(FrameError::Eof);
         }
@@ -180,6 +190,9 @@ pub async fn read_frame<R: AsyncBufRead + Unpin>(r: &mut R) -> Result<Vec<u8>, F
             .split_once(':')
             .ok_or_else(|| FrameError::Header(trimmed.to_string()))?;
         if k.trim().eq_ignore_ascii_case("content-length") {
+            if len.is_some() {
+                return Err(FrameError::Header("duplicate Content-Length".into()));
+            }
             let n: usize = v
                 .trim()
                 .parse()
@@ -235,18 +248,44 @@ mod tests {
         assert_eq!(read_frame(&mut r).await.unwrap(), b"{}");
         let bad = b"Content-Length: nope\r\n\r\n";
         let mut r = BufReader::new(&bad[..]);
-        assert!(matches!(read_frame(&mut r).await, Err(FrameError::Header(_))));
+        assert!(matches!(
+            read_frame(&mut r).await,
+            Err(FrameError::Header(_))
+        ));
         let big = format!("Content-Length: {}\r\n\r\n", MAX_FRAME_BYTES + 1);
         let mut r = BufReader::new(big.as_bytes());
-        assert!(matches!(read_frame(&mut r).await, Err(FrameError::TooLarge(_))));
+        assert!(matches!(
+            read_frame(&mut r).await,
+            Err(FrameError::TooLarge(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn rejects_unbounded_and_duplicate_headers() {
+        for data in [
+            vec![b'x'; MAX_HEADER_BYTES + 1],
+            b"Content-Length: 2\r\nContent-Length: 2\r\n\r\n{}".to_vec(),
+            vec![b'\n'; MAX_HEADER_BYTES + 1],
+        ] {
+            let mut r = BufReader::new(data.as_slice());
+            assert!(matches!(
+                read_frame(&mut r).await,
+                Err(FrameError::Header(_))
+            ));
+        }
     }
 
     #[test]
     fn message_shapes() {
         let req: Incoming =
-            serde_json::from_str(r#"{"jsonrpc":"2.0","id":3,"method":"ping","params":{}}"#).unwrap();
+            serde_json::from_str(r#"{"jsonrpc":"2.0","id":3,"method":"ping","params":{}}"#)
+                .unwrap();
         assert_eq!(req.id, Some(RequestId::Num(3)));
-        let r = serde_json::to_value(Response::ok(RequestId::Str("a".into()), serde_json::json!(1))).unwrap();
+        let r = serde_json::to_value(Response::ok(
+            RequestId::Str("a".into()),
+            serde_json::json!(1),
+        ))
+        .unwrap();
         assert_eq!(r, serde_json::json!({"jsonrpc":"2.0","id":"a","result":1}));
         let e = serde_json::to_value(Response::err(None, RpcError::new(-1, "x"))).unwrap();
         assert_eq!(e["id"], Value::Null);

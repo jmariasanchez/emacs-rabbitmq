@@ -41,18 +41,32 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Address {
-    Queue { queue: String },
-    Exchange { exchange: String, #[serde(default)] routing_key: Option<String> },
+    Queue {
+        queue: String,
+    },
+    Exchange {
+        exchange: String,
+        #[serde(default)]
+        routing_key: Option<String>,
+    },
     /// A raw address string, used verbatim.
-    Raw { address: String },
+    Raw {
+        address: String,
+    },
 }
 
 impl Address {
     pub fn render(&self) -> String {
         match self {
             Address::Queue { queue } => format!("/queues/{}", pct(queue)),
-            Address::Exchange { exchange, routing_key: Some(k) } => format!("/exchanges/{}/{}", pct(exchange), pct(k)),
-            Address::Exchange { exchange, routing_key: None } => format!("/exchanges/{}", pct(exchange)),
+            Address::Exchange {
+                exchange,
+                routing_key: Some(k),
+            } => format!("/exchanges/{}/{}", pct(exchange), pct(k)),
+            Address::Exchange {
+                exchange,
+                routing_key: None,
+            } => format!("/exchanges/{}", pct(exchange)),
             Address::Raw { address } => address.clone(),
         }
     }
@@ -94,7 +108,10 @@ fn d_flush() -> u64 {
 }
 
 enum SendCmd {
-    Send(Box<Message<Body<Value>>>, oneshot::Sender<std::result::Result<Outcome, String>>),
+    Send(
+        Box<Message<Body<Value>>>,
+        oneshot::Sender<std::result::Result<Outcome, String>>,
+    ),
     Close(oneshot::Sender<()>),
 }
 
@@ -152,7 +169,13 @@ fn map_err(what: &str, e: impl std::fmt::Display) -> CoreError {
 }
 
 /// One fe2o3 connection + session, created inside the link task that owns it.
-async fn open(p: &Profile, container: &str) -> Result<(fe2o3_amqp::connection::ConnectionHandle<()>, fe2o3_amqp::session::SessionHandle<()>)> {
+async fn open(
+    p: &Profile,
+    container: &str,
+) -> Result<(
+    fe2o3_amqp::connection::ConnectionHandle<()>,
+    fe2o3_amqp::session::SessionHandle<()>,
+)> {
     if p.tls.enabled {
         return Err(CoreError::unsupported(
             "AMQP 1.0 over TLS is not yet wired in this adapter; use the AMQP 0-9-1 adapter or a plain listener",
@@ -161,12 +184,17 @@ async fn open(p: &Profile, container: &str) -> Result<(fe2o3_amqp::connection::C
     let vhost = format!("vhost:{}", p.vhost);
     let mut conn = tokio::time::timeout(
         Duration::from_millis(p.limits.timeout_ms),
-        Connection::builder().container_id(container).hostname(vhost.as_str()).open(url(p).as_str()),
+        Connection::builder()
+            .container_id(container)
+            .hostname(vhost.as_str())
+            .open(url(p).as_str()),
     )
     .await
     .map_err(|_| CoreError::new(ErrorCode::Timeout, "AMQP 1.0 connect timed out"))?
     .map_err(|e| map_err("amqp10 connect", e))?;
-    let session = Session::begin(&mut conn).await.map_err(|e| map_err("amqp10 session", e))?;
+    let session = Session::begin(&mut conn)
+        .await
+        .map_err(|e| map_err("amqp10 session", e))?;
     Ok((conn, session))
 }
 
@@ -177,7 +205,10 @@ impl Amqp10Session {
         let (mut c, mut s) = open(&profile, &format!("{id}-probe")).await?;
         let _ = s.end().await;
         let _ = c.close().await;
-        sink.emit(names::SESSION, json!({"session": id, "protocol": "amqp10", "state": "connected", "at": now_millis()}));
+        sink.emit(
+            names::SESSION,
+            json!({"session": id, "protocol": "amqp10", "state": "connected", "at": now_millis()}),
+        );
         Ok(Arc::new(Self {
             id,
             profile,
@@ -189,7 +220,11 @@ impl Amqp10Session {
     }
 
     fn next_id(&self, role: &str) -> String {
-        format!("{}/amqp10/{role}/{}", self.id, self.seq.fetch_add(1, Ordering::Relaxed))
+        format!(
+            "{}/amqp10/{role}/{}",
+            self.id,
+            self.seq.fetch_add(1, Ordering::Relaxed)
+        )
     }
 
     // ------------------------------------------------------------ senders
@@ -200,7 +235,15 @@ impl Amqp10Session {
         let profile = self.profile.clone();
         let (tx, mut rx) = mpsc::channel::<SendCmd>(64);
         let (ready_tx, ready_rx) = oneshot::channel::<Result<()>>();
-        let info = Arc::new(Mutex::new(LinkInfo { id: id.clone(), role: "sender", address: addr.clone(), state: "attaching".into(), credit: None, delivered: 0, unsettled: 0 }));
+        let info = Arc::new(Mutex::new(LinkInfo {
+            id: id.clone(),
+            role: "sender",
+            address: addr.clone(),
+            state: "attaching".into(),
+            credit: None,
+            delivered: 0,
+            unsettled: 0,
+        }));
         let info2 = info.clone();
         let name = id.clone();
         tokio::spawn(async move {
@@ -243,30 +286,67 @@ impl Amqp10Session {
             let _ = session.end().await;
             let _ = conn.close().await;
         });
-        ready_rx.await.map_err(|_| CoreError::internal("sender task ended"))??;
+        ready_rx
+            .await
+            .map_err(|_| CoreError::internal("sender task ended"))??;
         let snapshot = info.lock().await.clone();
-        self.senders.lock().await.insert(id, SenderLink { tx, info });
+        self.senders
+            .lock()
+            .await
+            .insert(id, SenderLink { tx, info });
         Ok(snapshot)
     }
 
     /// Send messages on a sender link and classify each disposition.
-    pub async fn send(&self, link: &str, messages: &[(Payload, MessageProperties)], timeout: Duration) -> Result<Vec<PublishOutcome>> {
+    pub async fn send(
+        &self,
+        link: &str,
+        messages: &[(Payload, MessageProperties)],
+        timeout: Duration,
+    ) -> Result<Vec<PublishOutcome>> {
         let tx = {
             let s = self.senders.lock().await;
-            s.get(link).ok_or_else(|| CoreError::not_found(format!("no sender link {link}")))?.tx.clone()
+            s.get(link)
+                .ok_or_else(|| CoreError::not_found(format!("no sender link {link}")))?
+                .tx
+                .clone()
         };
         let mut out = Vec::new();
         for (i, (payload, props)) in messages.iter().enumerate() {
             let m = build_message(&payload.to_bytes()?, props);
             let (rtx, rrx) = oneshot::channel();
             if tx.send(SendCmd::Send(Box::new(m), rtx)).await.is_err() {
-                out.push(PublishOutcome { index: i, status: PublishStatus::Failed, reply_code: None, reply_text: None, error: Some("sender link closed".into()) });
+                out.push(PublishOutcome {
+                    index: i,
+                    status: PublishStatus::Failed,
+                    reply_code: None,
+                    reply_text: None,
+                    error: Some("sender link closed".into()),
+                });
                 continue;
             }
             let o = match tokio::time::timeout(timeout, rrx).await {
-                Err(_) => PublishOutcome { index: i, status: PublishStatus::Uncertain, reply_code: None, reply_text: None, error: Some("no disposition before timeout".into()) },
-                Ok(Err(_)) => PublishOutcome { index: i, status: PublishStatus::Uncertain, reply_code: None, reply_text: None, error: Some("sender task ended".into()) },
-                Ok(Ok(Err(e))) => PublishOutcome { index: i, status: PublishStatus::Uncertain, reply_code: None, reply_text: None, error: Some(e) },
+                Err(_) => PublishOutcome {
+                    index: i,
+                    status: PublishStatus::Uncertain,
+                    reply_code: None,
+                    reply_text: None,
+                    error: Some("no disposition before timeout".into()),
+                },
+                Ok(Err(_)) => PublishOutcome {
+                    index: i,
+                    status: PublishStatus::Uncertain,
+                    reply_code: None,
+                    reply_text: None,
+                    error: Some("sender task ended".into()),
+                },
+                Ok(Ok(Err(e))) => PublishOutcome {
+                    index: i,
+                    status: PublishStatus::Uncertain,
+                    reply_code: None,
+                    reply_text: None,
+                    error: Some(e),
+                },
                 Ok(Ok(Ok(outcome))) => classify(i, outcome),
             };
             out.push(o);
@@ -275,7 +355,12 @@ impl Amqp10Session {
     }
 
     pub async fn close_sender(&self, link: &str) -> Result<()> {
-        let l = self.senders.lock().await.remove(link).ok_or_else(|| CoreError::not_found(format!("no sender link {link}")))?;
+        let l = self
+            .senders
+            .lock()
+            .await
+            .remove(link)
+            .ok_or_else(|| CoreError::not_found(format!("no sender link {link}")))?;
         let (d, w) = oneshot::channel();
         let _ = l.tx.send(SendCmd::Close(d)).await;
         let _ = tokio::time::timeout(Duration::from_secs(5), w).await;
@@ -292,7 +377,15 @@ impl Amqp10Session {
         let profile = self.profile.clone();
         let (tx, mut rx) = mpsc::channel::<RecvCmd>(256);
         let (ready_tx, ready_rx) = oneshot::channel::<Result<()>>();
-        let info = Arc::new(Mutex::new(LinkInfo { id: id.clone(), role: "receiver", address: addr.clone(), state: "attaching".into(), credit: Some(o.credit), delivered: 0, unsettled: 0 }));
+        let info = Arc::new(Mutex::new(LinkInfo {
+            id: id.clone(),
+            role: "receiver",
+            address: addr.clone(),
+            state: "attaching".into(),
+            credit: Some(o.credit),
+            delivered: 0,
+            unsettled: 0,
+        }));
         let info2 = info.clone();
         let me = Arc::downgrade(self);
         let link_id = id.clone();
@@ -418,40 +511,62 @@ impl Amqp10Session {
                 }
             }
         });
-        ready_rx.await.map_err(|_| CoreError::internal("receiver task ended"))??;
+        ready_rx
+            .await
+            .map_err(|_| CoreError::internal("receiver task ended"))??;
         let snapshot = info.lock().await.clone();
-        self.receivers.lock().await.insert(id, ReceiverLink { tx, info });
+        self.receivers
+            .lock()
+            .await
+            .insert(id, ReceiverLink { tx, info });
         Ok(snapshot)
     }
 
     async fn recv_tx(&self, link: &str) -> Result<mpsc::Sender<RecvCmd>> {
         let r = self.receivers.lock().await;
-        Ok(r.get(link).ok_or_else(|| CoreError::not_found(format!("no receiver link {link}")))?.tx.clone())
+        Ok(r.get(link)
+            .ok_or_else(|| CoreError::not_found(format!("no receiver link {link}")))?
+            .tx
+            .clone())
     }
 
     pub async fn settle(&self, link: &str, delivery_id: u32, how: Settlement) -> Result<()> {
         let tx = self.recv_tx(link).await?;
         let (rt, rr) = oneshot::channel();
-        tx.send(RecvCmd::Settle(delivery_id, how, rt)).await.map_err(|_| CoreError::new(ErrorCode::ChannelClosed, "receiver link closed"))?;
-        rr.await.map_err(|_| CoreError::new(ErrorCode::ChannelClosed, "receiver link closed"))?
+        tx.send(RecvCmd::Settle(delivery_id, how, rt))
+            .await
+            .map_err(|_| CoreError::new(ErrorCode::ChannelClosed, "receiver link closed"))?;
+        rr.await
+            .map_err(|_| CoreError::new(ErrorCode::ChannelClosed, "receiver link closed"))?
     }
 
     pub async fn set_credit(&self, link: &str, credit: u32) -> Result<()> {
         let tx = self.recv_tx(link).await?;
         let (rt, rr) = oneshot::channel();
-        tx.send(RecvCmd::Credit(credit, rt)).await.map_err(|_| CoreError::new(ErrorCode::ChannelClosed, "receiver link closed"))?;
-        rr.await.map_err(|_| CoreError::new(ErrorCode::ChannelClosed, "receiver link closed"))?
+        tx.send(RecvCmd::Credit(credit, rt))
+            .await
+            .map_err(|_| CoreError::new(ErrorCode::ChannelClosed, "receiver link closed"))?;
+        rr.await
+            .map_err(|_| CoreError::new(ErrorCode::ChannelClosed, "receiver link closed"))?
     }
 
     pub async fn drain(&self, link: &str) -> Result<()> {
         let tx = self.recv_tx(link).await?;
         let (rt, rr) = oneshot::channel();
-        tx.send(RecvCmd::Drain(rt)).await.map_err(|_| CoreError::new(ErrorCode::ChannelClosed, "receiver link closed"))?;
-        rr.await.map_err(|_| CoreError::new(ErrorCode::ChannelClosed, "receiver link closed"))?
+        tx.send(RecvCmd::Drain(rt))
+            .await
+            .map_err(|_| CoreError::new(ErrorCode::ChannelClosed, "receiver link closed"))?;
+        rr.await
+            .map_err(|_| CoreError::new(ErrorCode::ChannelClosed, "receiver link closed"))?
     }
 
     pub async fn close_receiver(&self, link: &str) -> Result<()> {
-        let l = self.receivers.lock().await.remove(link).ok_or_else(|| CoreError::not_found(format!("no receiver link {link}")))?;
+        let l = self
+            .receivers
+            .lock()
+            .await
+            .remove(link)
+            .ok_or_else(|| CoreError::not_found(format!("no receiver link {link}")))?;
         let (d, w) = oneshot::channel();
         let _ = l.tx.send(RecvCmd::Close(d)).await;
         let _ = tokio::time::timeout(Duration::from_secs(5), w).await;
@@ -487,13 +602,25 @@ fn classify(i: usize, o: Outcome) -> PublishOutcome {
     let (status, text) = match o {
         Outcome::Accepted(_) => (PublishStatus::Confirmed, None),
         // RabbitMQ settles with `released` when a message cannot be routed.
-        Outcome::Released(_) => (PublishStatus::Returned, Some("released: the broker could not route the message".to_string())),
-        Outcome::Rejected(r) => (PublishStatus::Nacked, Some(format!("rejected: {:?}", r.error))),
+        Outcome::Released(_) => (
+            PublishStatus::Returned,
+            Some("released: the broker could not route the message".to_string()),
+        ),
+        Outcome::Rejected(r) => (
+            PublishStatus::Nacked,
+            Some(format!("rejected: {:?}", r.error)),
+        ),
         Outcome::Modified(m) => (PublishStatus::Nacked, Some(format!("modified: {m:?}"))),
         #[allow(unreachable_patterns)]
         other => (PublishStatus::Uncertain, Some(format!("{other:?}"))),
     };
-    PublishOutcome { index: i, status, reply_code: None, reply_text: text, error: None }
+    PublishOutcome {
+        index: i,
+        status,
+        reply_code: None,
+        reply_text: text,
+        error: None,
+    }
 }
 
 fn build_message(body: &[u8], p: &MessageProperties) -> Message<Body<Value>> {
@@ -517,7 +644,9 @@ fn build_message(body: &[u8], p: &MessageProperties) -> Message<Body<Value>> {
         props = props.subject(v.clone());
     }
     if let Some(ts) = p.timestamp {
-        props = props.creation_time(fe2o3_amqp::types::primitives::Timestamp::from_milliseconds(ts as i64 * 1000));
+        props = props.creation_time(fe2o3_amqp::types::primitives::Timestamp::from_milliseconds(
+            ts as i64 * 1000,
+        ));
     }
     let mut ap = ApplicationProperties::builder();
     for (k, v) in &p.headers {
@@ -634,12 +763,24 @@ fn body_bytes(b: &Body<Value>) -> Vec<u8> {
             Value::Binary(b) => b.to_vec(),
             other => value_to_json(other).to_string().into_bytes(),
         },
-        Body::Sequence(seq) => serde_json::Value::Array(seq.iter().flat_map(|s| s.0.iter().map(value_to_json)).collect()).to_string().into_bytes(),
+        Body::Sequence(seq) => serde_json::Value::Array(
+            seq.iter()
+                .flat_map(|s| s.0.iter().map(value_to_json))
+                .collect(),
+        )
+        .to_string()
+        .into_bytes(),
         Body::Empty => Vec::new(),
     }
 }
 
-fn inbound(link: &str, address: &str, delivery_id: u32, m: &Message<Body<Value>>, preview: usize) -> InboundMessage {
+fn inbound(
+    link: &str,
+    address: &str,
+    delivery_id: u32,
+    m: &Message<Body<Value>>,
+    preview: usize,
+) -> InboundMessage {
     let mut props = MessageProperties::default();
     if let Some(p) = &m.properties {
         props.message_id = p.message_id.as_ref().map(message_id_str);
@@ -648,7 +789,10 @@ fn inbound(link: &str, address: &str, delivery_id: u32, m: &Message<Body<Value>>
         props.content_encoding = p.content_encoding.as_ref().map(|s| s.as_str().to_string());
         props.reply_to = p.reply_to.clone();
         props.kind = p.subject.clone();
-        props.timestamp = p.creation_time.as_ref().map(|t| (t.milliseconds() / 1000) as u64);
+        props.timestamp = p
+            .creation_time
+            .as_ref()
+            .map(|t| (t.milliseconds() / 1000) as u64);
     }
     if let Some(h) = &m.header {
         props.delivery_mode = Some(if h.durable { 2 } else { 1 });
@@ -664,7 +808,13 @@ fn inbound(link: &str, address: &str, delivery_id: u32, m: &Message<Body<Value>>
     if let Some(ma) = &m.message_annotations {
         let mut ann = Map::new();
         for (k, v) in ma.0.iter() {
-            ann.insert(format!("{k:?}").trim_start_matches("Symbol(Symbol(\"").trim_end_matches("\"))").to_string(), value_to_json(v));
+            ann.insert(
+                format!("{k:?}")
+                    .trim_start_matches("Symbol(Symbol(\"")
+                    .trim_end_matches("\"))")
+                    .to_string(),
+                value_to_json(v),
+            );
         }
         props.annotations = ann;
     }
@@ -674,7 +824,12 @@ fn inbound(link: &str, address: &str, delivery_id: u32, m: &Message<Body<Value>>
     let body = body_bytes(&m.body);
     InboundMessage {
         id: format!("{link}/{delivery_id}"),
-        source: DeliverySource::Amqp10 { address: address.to_string(), link: link.to_string(), delivery_id, settled: false },
+        source: DeliverySource::Amqp10 {
+            address: address.to_string(),
+            link: link.to_string(),
+            delivery_id,
+            settled: false,
+        },
         exchange: String::new(),
         routing_key: String::new(),
         redelivered,
@@ -691,9 +846,29 @@ mod tests {
 
     #[test]
     fn v2_addresses() {
-        assert_eq!(Address::Queue { queue: "a b".into() }.render(), "/queues/a%20b");
-        assert_eq!(Address::Exchange { exchange: "x".into(), routing_key: Some("k.1".into()) }.render(), "/exchanges/x/k.1");
-        assert_eq!(Address::Exchange { exchange: "x".into(), routing_key: None }.render(), "/exchanges/x");
+        assert_eq!(
+            Address::Queue {
+                queue: "a b".into()
+            }
+            .render(),
+            "/queues/a%20b"
+        );
+        assert_eq!(
+            Address::Exchange {
+                exchange: "x".into(),
+                routing_key: Some("k.1".into())
+            }
+            .render(),
+            "/exchanges/x/k.1"
+        );
+        assert_eq!(
+            Address::Exchange {
+                exchange: "x".into(),
+                routing_key: None
+            }
+            .render(),
+            "/exchanges/x"
+        );
     }
 
     #[test]

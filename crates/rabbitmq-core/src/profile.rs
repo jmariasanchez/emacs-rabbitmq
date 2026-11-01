@@ -296,7 +296,10 @@ mod tests {
     fn defaults_and_uri() {
         let p = Profile::local("dev");
         assert_eq!(p.vhost, "/");
-        assert_eq!(p.amqp_uri(), "amqp://guest:guest@localhost:5672/%2F?heartbeat=30");
+        assert_eq!(
+            p.amqp_uri(),
+            "amqp://guest:guest@localhost:5672/%2F?heartbeat=30"
+        );
         assert_eq!(p.display_uri(), "amqp://guest@localhost:5672/%2F");
         assert_eq!(p.limits, Limits::default());
     }

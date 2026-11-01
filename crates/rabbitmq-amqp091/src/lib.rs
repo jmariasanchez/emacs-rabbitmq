@@ -15,4 +15,6 @@ pub mod errors;
 pub mod session;
 pub mod tls;
 
-pub use session::{ConsumeOptions, ExchangeDeclare, PublishMode, Session, SessionInfo, SessionState};
+pub use session::{
+    ConsumeOptions, ExchangeDeclare, PublishMode, Session, SessionInfo, SessionState,
+};

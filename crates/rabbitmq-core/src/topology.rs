@@ -146,10 +146,13 @@ impl Topology {
                         exchange: String::new(),
                         destination: k.clone(),
                         destination_type: "queue".into(),
-                        reason: "default exchange routes to the queue named by the routing key".into(),
+                        reason: "default exchange routes to the queue named by the routing key"
+                            .into(),
                     });
                 } else if !self.queues.is_empty() {
-                    caveats.push(format!("no known queue named \"{k}\" for the default exchange"));
+                    caveats.push(format!(
+                        "no known queue named \"{k}\" for the default exchange"
+                    ));
                 }
             }
         } else if let Some(x) = self.exchange(exchange) {
@@ -159,7 +162,17 @@ impl Topology {
                 ));
             }
             let mut seen = HashSet::new();
-            self.route_from(exchange, &keys, headers, &mut seen, &mut visited, &mut hops, &mut queues, &mut ae_used, &mut caveats);
+            self.route_from(
+                exchange,
+                &keys,
+                headers,
+                &mut seen,
+                &mut visited,
+                &mut hops,
+                &mut queues,
+                &mut ae_used,
+                &mut caveats,
+            );
         } else {
             caveats.push(format!(
                 "exchange \"{exchange}\" is not in the snapshot; the broker would close the channel with 404"
@@ -195,7 +208,9 @@ impl Topology {
         }
         visited.push(exchange.to_string());
         let Some(x) = self.exchange(exchange) else {
-            caveats.push(format!("exchange \"{exchange}\" referenced by a binding is not in the snapshot"));
+            caveats.push(format!(
+                "exchange \"{exchange}\" referenced by a binding is not in the snapshot"
+            ));
             return;
         };
         let mut matched_any = false;
@@ -231,7 +246,17 @@ impl Topology {
                     reason,
                 });
                 if b.destination_type == "exchange" {
-                    self.route_from(&b.destination, keys, headers, seen, visited, hops, queues, ae_used, caveats);
+                    self.route_from(
+                        &b.destination,
+                        keys,
+                        headers,
+                        seen,
+                        visited,
+                        hops,
+                        queues,
+                        ae_used,
+                        caveats,
+                    );
                 } else {
                     queues.insert(b.destination.clone());
                 }
@@ -242,9 +267,15 @@ impl Topology {
         // nothing. A matching exchange-to-exchange binding counts as a match
         // even if the downstream exchange then routes nowhere.
         if !matched_any {
-            if let Some(ae) = x.arguments.get("alternate-exchange").and_then(Value::as_str) {
+            if let Some(ae) = x
+                .arguments
+                .get("alternate-exchange")
+                .and_then(Value::as_str)
+            {
                 ae_used.push(ae.to_string());
-                self.route_from(ae, keys, headers, seen, visited, hops, queues, ae_used, caveats);
+                self.route_from(
+                    ae, keys, headers, seen, visited, hops, queues, ae_used, caveats,
+                );
             } else if x.policy.is_some() {
                 caveats.push(format!(
                     "exchange \"{exchange}\" has policy {:?}; an alternate exchange set by policy is not visible in the snapshot",
@@ -262,14 +293,20 @@ impl Topology {
         let qs: HashSet<_> = self.queues.iter().map(|q| q.name.as_str()).collect();
         for b in &self.bindings {
             if !b.source.is_empty() && !ex.contains(b.source.as_str()) {
-                out.push(format!("binding source exchange \"{}\" is missing", b.source));
+                out.push(format!(
+                    "binding source exchange \"{}\" is missing",
+                    b.source
+                ));
             }
             let ok = match b.destination_type.as_str() {
                 "queue" => qs.contains(b.destination.as_str()),
                 _ => ex.contains(b.destination.as_str()),
             };
             if !ok {
-                out.push(format!("binding destination {} \"{}\" is missing", b.destination_type, b.destination));
+                out.push(format!(
+                    "binding destination {} \"{}\" is missing",
+                    b.destination_type, b.destination
+                ));
             }
         }
         for e in &self.exchanges {
@@ -278,7 +315,10 @@ impl Topology {
             }
             let has = self.bindings.iter().any(|b| b.source == e.name);
             if !has && !e.arguments.contains_key("alternate-exchange") {
-                out.push(format!("exchange \"{}\" has no bindings: messages published to it are unroutable", e.name));
+                out.push(format!(
+                    "exchange \"{}\" has no bindings: messages published to it are unroutable",
+                    e.name
+                ));
             }
         }
         out
@@ -286,7 +326,8 @@ impl Topology {
 
     /// Graphviz rendering of the topology.
     pub fn to_dot(&self) -> String {
-        let mut s = String::from("digraph rabbitmq {\n  rankdir=LR;\n  node [fontname=\"monospace\"];\n");
+        let mut s =
+            String::from("digraph rabbitmq {\n  rankdir=LR;\n  node [fontname=\"monospace\"];\n");
         for e in &self.exchanges {
             if e.name.is_empty() {
                 continue;
@@ -298,8 +339,16 @@ impl Topology {
                 e.kind,
                 if e.internal { ", style=dashed" } else { "" }
             ));
-            if let Some(ae) = e.arguments.get("alternate-exchange").and_then(Value::as_str) {
-                s.push_str(&format!("  \"x:{}\" -> \"x:{}\" [style=dotted, label=\"AE\"];\n", esc(&e.name), esc(ae)));
+            if let Some(ae) = e
+                .arguments
+                .get("alternate-exchange")
+                .and_then(Value::as_str)
+            {
+                s.push_str(&format!(
+                    "  \"x:{}\" -> \"x:{}\" [style=dotted, label=\"AE\"];\n",
+                    esc(&e.name),
+                    esc(ae)
+                ));
             }
         }
         for q in &self.queues {
@@ -309,15 +358,27 @@ impl Topology {
                 esc(&q.name),
                 q.kind
             ));
-            if let Some(dlx) = q.arguments.get("x-dead-letter-exchange").and_then(Value::as_str) {
-                s.push_str(&format!("  \"q:{}\" -> \"x:{}\" [style=dotted, color=red, label=\"DLX\"];\n", esc(&q.name), esc(dlx)));
+            if let Some(dlx) = q
+                .arguments
+                .get("x-dead-letter-exchange")
+                .and_then(Value::as_str)
+            {
+                s.push_str(&format!(
+                    "  \"q:{}\" -> \"x:{}\" [style=dotted, color=red, label=\"DLX\"];\n",
+                    esc(&q.name),
+                    esc(dlx)
+                ));
             }
         }
         for b in &self.bindings {
             if b.source.is_empty() {
                 continue;
             }
-            let dst = if b.destination_type == "queue" { "q" } else { "x" };
+            let dst = if b.destination_type == "queue" {
+                "q"
+            } else {
+                "x"
+            };
             s.push_str(&format!(
                 "  \"x:{}\" -> \"{}:{}\" [label=\"{}\"];\n",
                 esc(&b.source),
@@ -338,7 +399,11 @@ fn esc(s: &str) -> String {
 /// AMQP topic matching. `*` = exactly one word, `#` = zero or more words.
 pub fn topic_match(pattern: &str, key: &str) -> bool {
     let p: Vec<&str> = pattern.split('.').collect();
-    let k: Vec<&str> = if key.is_empty() { vec![] } else { key.split('.').collect() };
+    let k: Vec<&str> = if key.is_empty() {
+        vec![]
+    } else {
+        key.split('.').collect()
+    };
     let p: Vec<&str> = if pattern.is_empty() { vec![] } else { p };
     fn rec(p: &[&str], k: &[&str]) -> bool {
         match p.first() {
@@ -352,12 +417,18 @@ pub fn topic_match(pattern: &str, key: &str) -> bool {
 }
 
 fn describe_x_match(args: &Map<String, Value>) -> String {
-    format!("x-match={}", args.get("x-match").and_then(Value::as_str).unwrap_or("all"))
+    format!(
+        "x-match={}",
+        args.get("x-match").and_then(Value::as_str).unwrap_or("all")
+    )
 }
 
 /// Headers exchange matching including `all-with-x` / `any-with-x`.
 pub fn headers_match(binding_args: &Map<String, Value>, headers: &Map<String, Value>) -> bool {
-    let mode = binding_args.get("x-match").and_then(Value::as_str).unwrap_or("all");
+    let mode = binding_args
+        .get("x-match")
+        .and_then(Value::as_str)
+        .unwrap_or("all");
     let include_x = mode.ends_with("-with-x");
     let any = mode.starts_with("any");
     let mut considered = 0;
@@ -543,11 +614,17 @@ mod tests {
     #[test]
     fn headers_exchange() {
         let t = topo();
-        let h = json!({"format": "pdf", "type": "report"}).as_object().unwrap().clone();
+        let h = json!({"format": "pdf", "type": "report"})
+            .as_object()
+            .unwrap()
+            .clone();
         assert_eq!(t.simulate("hdr", "", &h).queues, vec!["h1", "pdf"]);
         let h = json!({"lang": "en"}).as_object().unwrap().clone();
         assert_eq!(t.simulate("hdr", "", &h).queues, vec!["h1"]);
-        let mut args = json!({"x-match": "all-with-x", "x-foo": 1}).as_object().unwrap().clone();
+        let mut args = json!({"x-match": "all-with-x", "x-foo": 1})
+            .as_object()
+            .unwrap()
+            .clone();
         assert!(!headers_match(&args, &Map::new()));
         args.insert("x-match".into(), json!("all"));
         assert!(headers_match(&args, &Map::new()));
@@ -557,7 +634,10 @@ mod tests {
     fn cc_headers_and_internal_and_custom() {
         let t = topo();
         let h = json!({"CC": ["order.eu.x"]}).as_object().unwrap().clone();
-        assert!(t.simulate("orders", "zzz", &h).queues.contains(&"eu".to_string()));
+        assert!(t
+            .simulate("orders", "zzz", &h)
+            .queues
+            .contains(&"eu".to_string()));
         let p = t.simulate("audit", "order.us.new", &Map::new());
         assert!(p.caveats.iter().any(|c| c.contains("internal")));
         let p = t.simulate("custom", "10", &Map::new());
@@ -574,14 +654,16 @@ mod tests {
                 {"source": "b", "destination": "a", "destination_type": "exchange"},
                 {"source": "b", "destination": "q", "destination_type": "queue"}
             ]
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(t.simulate("a", "", &Map::new()).queues, vec!["q"]);
     }
 
     #[test]
     fn lint_and_dot_and_diff() {
         let mut t = topo();
-        t.exchanges.push(serde_json::from_value(json!({"name": "lonely", "type": "direct"})).unwrap());
+        t.exchanges
+            .push(serde_json::from_value(json!({"name": "lonely", "type": "direct"})).unwrap());
         let l = t.lint();
         assert!(l.iter().any(|m| m.contains("lonely")));
         let dot = t.to_dot();
@@ -589,7 +671,8 @@ mod tests {
         let mut t2 = t.clone();
         t2.queues.retain(|q| q.name != "eu");
         t2.exchanges[1].kind = "direct".into();
-        t2.queues.push(serde_json::from_value(json!({"name": "new"})).unwrap());
+        t2.queues
+            .push(serde_json::from_value(json!({"name": "new"})).unwrap());
         let d = diff(&t, &t2);
         assert_eq!(d.removed, vec!["queue eu"]);
         assert_eq!(d.added, vec!["queue new"]);

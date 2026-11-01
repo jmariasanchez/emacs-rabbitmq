@@ -65,7 +65,11 @@ impl BrokerVersion {
             .split(|c: char| !c.is_ascii_digit())
             .filter(|p| !p.is_empty())
             .map(|p| p.parse::<u32>().ok());
-        Some(Self(it.next()??, it.next().flatten().unwrap_or(0), it.next().flatten().unwrap_or(0)))
+        Some(Self(
+            it.next()??,
+            it.next().flatten().unwrap_or(0),
+            it.next().flatten().unwrap_or(0),
+        ))
     }
     pub fn at_least(self, major: u32, minor: u32) -> bool {
         (self.0, self.1) >= (major, minor)
@@ -112,29 +116,167 @@ struct ArgRule {
 }
 
 const ARGS: &[ArgRule] = &[
-    ArgRule { name: "x-message-ttl", classic: true, quorum: true, stream: false, note: "streams use x-max-age retention instead" },
-    ArgRule { name: "x-expires", classic: true, quorum: true, stream: false, note: "" },
-    ArgRule { name: "x-max-length", classic: true, quorum: true, stream: false, note: "streams use x-max-length-bytes retention" },
-    ArgRule { name: "x-max-length-bytes", classic: true, quorum: true, stream: true, note: "" },
-    ArgRule { name: "x-overflow", classic: true, quorum: true, stream: false, note: "" },
-    ArgRule { name: "x-dead-letter-exchange", classic: true, quorum: true, stream: false, note: "" },
-    ArgRule { name: "x-dead-letter-routing-key", classic: true, quorum: true, stream: false, note: "" },
-    ArgRule { name: "x-dead-letter-strategy", classic: false, quorum: true, stream: false, note: "at-least-once dead-lettering is quorum-only" },
-    ArgRule { name: "x-max-priority", classic: true, quorum: false, stream: false, note: "quorum queues support priorities without this argument (4.0+)" },
-    ArgRule { name: "x-queue-mode", classic: true, quorum: false, stream: false, note: "deprecated; classic queues v2 ignore it" },
-    ArgRule { name: "x-queue-version", classic: true, quorum: false, stream: false, note: "" },
-    ArgRule { name: "x-single-active-consumer", classic: true, quorum: true, stream: false, note: "streams use per-consumer single-active-consumer" },
-    ArgRule { name: "x-delivery-limit", classic: false, quorum: true, stream: false, note: "poison-message handling is quorum-only" },
-    ArgRule { name: "x-quorum-initial-group-size", classic: false, quorum: true, stream: false, note: "" },
-    ArgRule { name: "x-quorum-target-group-size", classic: false, quorum: true, stream: false, note: "" },
-    ArgRule { name: "x-max-in-memory-length", classic: false, quorum: true, stream: false, note: "accepted but ignored since RabbitMQ 4.0" },
-    ArgRule { name: "x-max-in-memory-bytes", classic: false, quorum: true, stream: false, note: "accepted but ignored since RabbitMQ 4.0" },
-    ArgRule { name: "x-max-age", classic: false, quorum: false, stream: true, note: "" },
-    ArgRule { name: "x-stream-max-segment-size-bytes", classic: false, quorum: false, stream: true, note: "" },
-    ArgRule { name: "x-stream-filter-size-bytes", classic: false, quorum: false, stream: true, note: "" },
-    ArgRule { name: "x-initial-cluster-size", classic: false, quorum: false, stream: true, note: "" },
-    ArgRule { name: "x-queue-leader-locator", classic: false, quorum: true, stream: true, note: "" },
-    ArgRule { name: "x-queue-master-locator", classic: true, quorum: false, stream: false, note: "deprecated; use x-queue-leader-locator" },
+    ArgRule {
+        name: "x-message-ttl",
+        classic: true,
+        quorum: true,
+        stream: false,
+        note: "streams use x-max-age retention instead",
+    },
+    ArgRule {
+        name: "x-expires",
+        classic: true,
+        quorum: true,
+        stream: false,
+        note: "",
+    },
+    ArgRule {
+        name: "x-max-length",
+        classic: true,
+        quorum: true,
+        stream: false,
+        note: "streams use x-max-length-bytes retention",
+    },
+    ArgRule {
+        name: "x-max-length-bytes",
+        classic: true,
+        quorum: true,
+        stream: true,
+        note: "",
+    },
+    ArgRule {
+        name: "x-overflow",
+        classic: true,
+        quorum: true,
+        stream: false,
+        note: "",
+    },
+    ArgRule {
+        name: "x-dead-letter-exchange",
+        classic: true,
+        quorum: true,
+        stream: false,
+        note: "",
+    },
+    ArgRule {
+        name: "x-dead-letter-routing-key",
+        classic: true,
+        quorum: true,
+        stream: false,
+        note: "",
+    },
+    ArgRule {
+        name: "x-dead-letter-strategy",
+        classic: false,
+        quorum: true,
+        stream: false,
+        note: "at-least-once dead-lettering is quorum-only",
+    },
+    ArgRule {
+        name: "x-max-priority",
+        classic: true,
+        quorum: false,
+        stream: false,
+        note: "quorum queues support priorities without this argument (4.0+)",
+    },
+    ArgRule {
+        name: "x-queue-mode",
+        classic: true,
+        quorum: false,
+        stream: false,
+        note: "deprecated; classic queues v2 ignore it",
+    },
+    ArgRule {
+        name: "x-queue-version",
+        classic: true,
+        quorum: false,
+        stream: false,
+        note: "",
+    },
+    ArgRule {
+        name: "x-single-active-consumer",
+        classic: true,
+        quorum: true,
+        stream: false,
+        note: "streams use per-consumer single-active-consumer",
+    },
+    ArgRule {
+        name: "x-delivery-limit",
+        classic: false,
+        quorum: true,
+        stream: false,
+        note: "poison-message handling is quorum-only",
+    },
+    ArgRule {
+        name: "x-quorum-initial-group-size",
+        classic: false,
+        quorum: true,
+        stream: false,
+        note: "",
+    },
+    ArgRule {
+        name: "x-quorum-target-group-size",
+        classic: false,
+        quorum: true,
+        stream: false,
+        note: "",
+    },
+    ArgRule {
+        name: "x-max-in-memory-length",
+        classic: false,
+        quorum: true,
+        stream: false,
+        note: "accepted but ignored since RabbitMQ 4.0",
+    },
+    ArgRule {
+        name: "x-max-in-memory-bytes",
+        classic: false,
+        quorum: true,
+        stream: false,
+        note: "accepted but ignored since RabbitMQ 4.0",
+    },
+    ArgRule {
+        name: "x-max-age",
+        classic: false,
+        quorum: false,
+        stream: true,
+        note: "",
+    },
+    ArgRule {
+        name: "x-stream-max-segment-size-bytes",
+        classic: false,
+        quorum: false,
+        stream: true,
+        note: "",
+    },
+    ArgRule {
+        name: "x-stream-filter-size-bytes",
+        classic: false,
+        quorum: false,
+        stream: true,
+        note: "",
+    },
+    ArgRule {
+        name: "x-initial-cluster-size",
+        classic: false,
+        quorum: false,
+        stream: true,
+        note: "",
+    },
+    ArgRule {
+        name: "x-queue-leader-locator",
+        classic: false,
+        quorum: true,
+        stream: true,
+        note: "",
+    },
+    ArgRule {
+        name: "x-queue-master-locator",
+        classic: true,
+        quorum: false,
+        stream: false,
+        note: "deprecated; use x-queue-leader-locator",
+    },
 ];
 
 /// A queue declaration request after validation.
@@ -167,13 +309,22 @@ impl QueueSpec {
         }
         if qt != QueueType::Classic {
             if !self.durable {
-                return Err(CoreError::invalid(format!("{} queues must be durable", qt.as_str())));
+                return Err(CoreError::invalid(format!(
+                    "{} queues must be durable",
+                    qt.as_str()
+                )));
             }
             if self.exclusive {
-                return Err(CoreError::invalid(format!("{} queues cannot be exclusive", qt.as_str())));
+                return Err(CoreError::invalid(format!(
+                    "{} queues cannot be exclusive",
+                    qt.as_str()
+                )));
             }
             if self.auto_delete {
-                return Err(CoreError::invalid(format!("{} queues cannot be auto-delete", qt.as_str())));
+                return Err(CoreError::invalid(format!(
+                    "{} queues cannot be auto-delete",
+                    qt.as_str()
+                )));
             }
         }
         for (k, _) in self.arguments.iter() {
@@ -187,7 +338,8 @@ impl QueueSpec {
                     QueueType::Stream => rule.stream,
                 };
                 if !ok {
-                    let mut msg = format!("argument {k} is not supported by {} queues", qt.as_str());
+                    let mut msg =
+                        format!("argument {k} is not supported by {} queues", qt.as_str());
                     if !rule.note.is_empty() {
                         msg.push_str(&format!(" ({})", rule.note));
                     }
@@ -208,7 +360,11 @@ impl QueueSpec {
         if let Some(v) = self.arguments.get("x-max-priority") {
             match v.as_u64() {
                 Some(1..=255) => {}
-                _ => return Err(CoreError::invalid("x-max-priority must be an integer between 1 and 255")),
+                _ => {
+                    return Err(CoreError::invalid(
+                        "x-max-priority must be an integer between 1 and 255",
+                    ))
+                }
             }
         }
         if let Some(v) = self.arguments.get("x-max-age").and_then(Value::as_str) {
@@ -230,7 +386,12 @@ impl QueueSpec {
         if self.queue_type == QueueType::Classic && !self.durable && !self.exclusive {
             w.push("transient non-exclusive queues are a deprecated feature; RabbitMQ 4.x rejects them unless deprecated_features.permit.transient_nonexcl_queues = true".into());
         }
-        for k in ["x-max-in-memory-length", "x-max-in-memory-bytes", "x-queue-mode", "x-queue-master-locator"] {
+        for k in [
+            "x-max-in-memory-length",
+            "x-max-in-memory-bytes",
+            "x-queue-mode",
+            "x-queue-master-locator",
+        ] {
             if self.arguments.contains_key(k) {
                 w.push(format!("{k} is deprecated or ignored by RabbitMQ 4.x"));
             }
@@ -241,7 +402,9 @@ impl QueueSpec {
 
 fn valid_max_age(v: &str) -> bool {
     let (num, unit) = v.split_at(v.len().saturating_sub(1));
-    !num.is_empty() && num.chars().all(|c| c.is_ascii_digit()) && matches!(unit, "Y" | "M" | "D" | "h" | "m" | "s")
+    !num.is_empty()
+        && num.chars().all(|c| c.is_ascii_digit())
+        && matches!(unit, "Y" | "M" | "D" | "h" | "m" | "s")
 }
 
 /// Look up the queue type of a declared queue from its arguments or
@@ -271,7 +434,10 @@ mod tests {
     #[test]
     fn version_parse() {
         assert_eq!(BrokerVersion::parse("4.4.0"), Some(BrokerVersion(4, 4, 0)));
-        assert_eq!(BrokerVersion::parse("3.13.7+1.g1"), Some(BrokerVersion(3, 13, 7)));
+        assert_eq!(
+            BrokerVersion::parse("3.13.7+1.g1"),
+            Some(BrokerVersion(3, 13, 7))
+        );
         assert_eq!(BrokerVersion::parse("4"), Some(BrokerVersion(4, 0, 0)));
         assert!(BrokerVersion::parse("abc").is_none());
         let f = FeatureMatrix::for_version(BrokerVersion(4, 4, 0));
@@ -281,31 +447,59 @@ mod tests {
 
     #[test]
     fn quorum_rules() {
-        assert!(spec(QueueType::Quorum, json!({"x-delivery-limit": 5})).validate().is_ok());
-        let e = spec(QueueType::Quorum, json!({"x-max-priority": 5})).validate().unwrap_err();
+        assert!(spec(QueueType::Quorum, json!({"x-delivery-limit": 5}))
+            .validate()
+            .is_ok());
+        let e = spec(QueueType::Quorum, json!({"x-max-priority": 5}))
+            .validate()
+            .unwrap_err();
         assert_eq!(e.code, ErrorCode::Unsupported);
         let mut s = spec(QueueType::Quorum, json!({}));
         s.exclusive = true;
         assert!(s.validate().is_err());
-        assert!(spec(QueueType::Quorum, json!({"x-overflow": "reject-publish-dlx"})).validate().is_ok());
-        assert!(spec(QueueType::Quorum, json!({"x-overflow": "bogus"})).validate().is_err());
-        assert!(spec(QueueType::Quorum, json!({"x-queue-mode": "lazy"})).validate().is_err());
+        assert!(spec(
+            QueueType::Quorum,
+            json!({"x-overflow": "reject-publish-dlx"})
+        )
+        .validate()
+        .is_ok());
+        assert!(spec(QueueType::Quorum, json!({"x-overflow": "bogus"}))
+            .validate()
+            .is_err());
+        assert!(spec(QueueType::Quorum, json!({"x-queue-mode": "lazy"}))
+            .validate()
+            .is_err());
     }
 
     #[test]
     fn stream_rules() {
-        let ok = spec(QueueType::Stream, json!({"x-max-age": "7D", "x-max-length-bytes": 1000})).validate().unwrap();
+        let ok = spec(
+            QueueType::Stream,
+            json!({"x-max-age": "7D", "x-max-length-bytes": 1000}),
+        )
+        .validate()
+        .unwrap();
         assert_eq!(ok.arguments["x-queue-type"], "stream");
-        assert!(spec(QueueType::Stream, json!({"x-message-ttl": 5})).validate().is_err());
-        assert!(spec(QueueType::Stream, json!({"x-max-age": "7days"})).validate().is_err());
+        assert!(spec(QueueType::Stream, json!({"x-message-ttl": 5}))
+            .validate()
+            .is_err());
+        assert!(spec(QueueType::Stream, json!({"x-max-age": "7days"}))
+            .validate()
+            .is_err());
         assert!(!QueueType::Stream.supports_basic_get());
     }
 
     #[test]
     fn classic_rules() {
-        assert!(spec(QueueType::Classic, json!({"x-max-priority": 10})).validate().is_ok());
-        assert!(spec(QueueType::Classic, json!({"x-max-priority": 0})).validate().is_err());
-        assert!(spec(QueueType::Classic, json!({"x-delivery-limit": 3})).validate().is_err());
+        assert!(spec(QueueType::Classic, json!({"x-max-priority": 10}))
+            .validate()
+            .is_ok());
+        assert!(spec(QueueType::Classic, json!({"x-max-priority": 0}))
+            .validate()
+            .is_err());
+        assert!(spec(QueueType::Classic, json!({"x-delivery-limit": 3}))
+            .validate()
+            .is_err());
         let mut s = spec(QueueType::Classic, json!({}));
         s.name = "amq.foo".into();
         assert!(s.clone().validate().is_err());

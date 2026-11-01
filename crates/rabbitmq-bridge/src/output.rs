@@ -31,7 +31,11 @@ impl Outbox {
     }
 
     pub fn notify(&self, method: &str, params: Value) {
-        if self.notes.try_send(Notification::new(method, params)).is_err() {
+        if self
+            .notes
+            .try_send(Notification::new(method, params))
+            .is_err()
+        {
             self.dropped.fetch_add(1, Ordering::Relaxed);
         }
     }
@@ -49,11 +53,17 @@ impl EventSink for Outbox {
 
 /// Spawn the writer. Returns the outbox and the writer's join handle; the
 /// writer exits once every `Outbox` clone is dropped and queues are drained.
-pub fn spawn_writer<W: AsyncWrite + Unpin + Send + 'static>(mut w: W) -> (Outbox, tokio::task::JoinHandle<()>) {
+pub fn spawn_writer<W: AsyncWrite + Unpin + Send + 'static>(
+    mut w: W,
+) -> (Outbox, tokio::task::JoinHandle<()>) {
     let (rtx, mut rrx) = mpsc::unbounded_channel::<Response>();
     let (ntx, mut nrx) = mpsc::channel::<Notification>(NOTIFY_QUEUE);
     let dropped = Arc::new(AtomicU64::new(0));
-    let outbox = Outbox { resp: rtx, notes: ntx, dropped: dropped.clone() };
+    let outbox = Outbox {
+        resp: rtx,
+        notes: ntx,
+        dropped: dropped.clone(),
+    };
     let handle = tokio::spawn(async move {
         let mut reported = 0u64;
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(2));
@@ -87,7 +97,10 @@ pub fn spawn_writer<W: AsyncWrite + Unpin + Send + 'static>(mut w: W) -> (Outbox
     (outbox, handle)
 }
 
-async fn write_json<W: AsyncWrite + Unpin, T: serde::Serialize>(w: &mut W, v: &T) -> std::io::Result<()> {
+async fn write_json<W: AsyncWrite + Unpin, T: serde::Serialize>(
+    w: &mut W,
+    v: &T,
+) -> std::io::Result<()> {
     let body = serde_json::to_vec(v).map_err(std::io::Error::other)?;
     write_frame(w, &body).await
 }

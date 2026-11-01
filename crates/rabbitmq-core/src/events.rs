@@ -40,13 +40,21 @@ impl MemorySink {
         self.events.lock().unwrap().clone()
     }
     pub fn count(&self, method: &str) -> usize {
-        self.events.lock().unwrap().iter().filter(|(m, _)| m == method).count()
+        self.events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(m, _)| m == method)
+            .count()
     }
 }
 
 impl EventSink for MemorySink {
     fn emit(&self, method: &str, params: Value) {
-        self.events.lock().unwrap().push((method.to_string(), params));
+        self.events
+            .lock()
+            .unwrap()
+            .push((method.to_string(), params));
     }
 }
 

@@ -28,9 +28,16 @@ use rabbitmq_core::error::{CoreError, ErrorCode, Result};
 use rabbitmq_core::events::{self, names, SharedSink};
 use rabbitmq_core::message::*;
 use rabbitmq_core::profile::Profile;
-use rabbitmq_stream_client::error::{ClientError, ConsumerCreateError, ProducerCreateError, ProducerPublishError, StreamCreateError, StreamDeleteError};
-use rabbitmq_stream_client::types::{ByteCapacity, Message, OffsetSpecification, ResponseCode, SimpleValue};
-use rabbitmq_stream_client::{Client, ClientOptions, Environment, FilterConfiguration, TlsConfiguration};
+use rabbitmq_stream_client::error::{
+    ClientError, ConsumerCreateError, ProducerCreateError, ProducerPublishError, StreamCreateError,
+    StreamDeleteError,
+};
+use rabbitmq_stream_client::types::{
+    ByteCapacity, Message, OffsetSpecification, ResponseCode, SimpleValue,
+};
+use rabbitmq_stream_client::{
+    Client, ClientOptions, Environment, FilterConfiguration, TlsConfiguration,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
@@ -46,11 +53,15 @@ pub enum StartAt {
     First,
     Last,
     Next,
-    Offset { offset: u64 },
+    Offset {
+        offset: u64,
+    },
     /// Milliseconds since the Unix epoch. The broker starts at the first chunk
     /// whose timestamp is at or after this time, so a few earlier messages from
     /// the same chunk may be included.
-    Timestamp { timestamp: i64 },
+    Timestamp {
+        timestamp: i64,
+    },
 }
 
 impl StartAt {
@@ -259,8 +270,18 @@ impl StreamSession {
                     profile.host, profile.stream_port
                 ))
             })?;
-        sink.emit(names::SESSION, json!({"session": id, "protocol": "stream", "state": "connected", "at": now_millis()}));
-        Ok(Arc::new(Self { id, profile, env, sink, subs: Mutex::new(HashMap::new()), seq: AtomicU64::new(0) }))
+        sink.emit(
+            names::SESSION,
+            json!({"session": id, "protocol": "stream", "state": "connected", "at": now_millis()}),
+        );
+        Ok(Arc::new(Self {
+            id,
+            profile,
+            env,
+            sink,
+            subs: Mutex::new(HashMap::new()),
+            seq: AtomicU64::new(0),
+        }))
     }
 
     async fn client(&self) -> Result<Client> {
@@ -274,7 +295,9 @@ impl StreamSession {
         if self.profile.tls.enabled {
             o = o.tls(tls(&self.profile)?);
         }
-        Client::connect(o.build()).await.map_err(|e| map_client(&e, "stream client"))
+        Client::connect(o.build())
+            .await
+            .map_err(|e| map_client(&e, "stream client"))
     }
 
     // ------------------------------------------------------------ admin
@@ -291,7 +314,10 @@ impl StreamSession {
             cr = cr.max_segment_size(ByteCapacity::B(b));
         }
         let r = match c.partitions {
-            Some(n) => cr.create_super_stream(&c.name, n, c.binding_keys.clone()).await,
+            Some(n) => {
+                cr.create_super_stream(&c.name, n, c.binding_keys.clone())
+                    .await
+            }
             None => cr.create(&c.name).await,
         };
         r.map_err(|e| match e {
@@ -301,7 +327,11 @@ impl StreamSession {
     }
 
     pub async fn delete(&self, name: &str, super_stream: bool) -> Result<()> {
-        let r = if super_stream { self.env.delete_super_stream(name).await } else { self.env.delete_stream(name).await };
+        let r = if super_stream {
+            self.env.delete_super_stream(name).await
+        } else {
+            self.env.delete_stream(name).await
+        };
         r.map_err(|e| match e {
             StreamDeleteError::Delete { status, .. } => map_code(&status, "delete stream"),
             StreamDeleteError::Client(c) => map_client(&c, "delete stream"),
@@ -311,7 +341,10 @@ impl StreamSession {
     /// Leader / replica placement for streams.
     pub async fn metadata(&self, streams: &[String]) -> Result<Value> {
         let c = self.client().await?;
-        let md = c.metadata(streams.to_vec()).await.map_err(|e| map_client(&e, "metadata"));
+        let md = c
+            .metadata(streams.to_vec())
+            .await
+            .map_err(|e| map_client(&e, "metadata"));
         let _ = c.close().await;
         let md = md?;
         let mut out = Map::new();
@@ -331,11 +364,16 @@ impl StreamSession {
 
     pub async fn partitions(&self, super_stream: &str) -> Result<Vec<String>> {
         let c = self.client().await?;
-        let r = c.partitions(super_stream.to_string()).await.map_err(|e| map_client(&e, "partitions"));
+        let r = c
+            .partitions(super_stream.to_string())
+            .await
+            .map_err(|e| map_client(&e, "partitions"));
         let _ = c.close().await;
         let r = r?;
         if !r.is_ok() {
-            return Err(CoreError::not_found(format!("super stream {super_stream} not found")));
+            return Err(CoreError::not_found(format!(
+                "super stream {super_stream} not found"
+            )));
         }
         Ok(r.streams)
     }
@@ -343,7 +381,10 @@ impl StreamSession {
     /// Which partitions a routing key maps to (routing-key strategy).
     pub async fn route(&self, super_stream: &str, routing_key: &str) -> Result<Vec<String>> {
         let c = self.client().await?;
-        let r = c.route(routing_key.to_string(), super_stream.to_string()).await.map_err(|e| map_client(&e, "route"));
+        let r = c
+            .route(routing_key.to_string(), super_stream.to_string())
+            .await
+            .map_err(|e| map_client(&e, "route"));
         let _ = c.close().await;
         Ok(r?.streams)
     }
@@ -363,7 +404,10 @@ impl StreamSession {
     /// operation that writes broker state besides publish/create/delete.
     pub async fn store_offset(&self, consumer_name: &str, stream: &str, offset: u64) -> Result<()> {
         let c = self.client().await?;
-        let r = c.store_offset(consumer_name, stream, offset).await.map_err(|e| map_client(&e, "store offset"));
+        let r = c
+            .store_offset(consumer_name, stream, offset)
+            .await
+            .map_err(|e| map_client(&e, "store offset"));
         // store_offset is fire-and-forget in the protocol; query it back so the
         // caller gets a confirmed value rather than an assumption.
         let mut confirmed = None;
@@ -381,7 +425,11 @@ impl StreamSession {
         let _ = c.close().await;
         r?;
         if confirmed.is_none() {
-            return Err(CoreError::new(ErrorCode::Timeout, "offset stored but not yet visible; result uncertain").ambiguous(true));
+            return Err(CoreError::new(
+                ErrorCode::Timeout,
+                "offset stored but not yet visible; result uncertain",
+            )
+            .ambiguous(true));
         }
         Ok(())
     }
@@ -389,7 +437,10 @@ impl StreamSession {
     /// Last publishing id seen by the broker for a named producer.
     pub async fn producer_sequence(&self, producer_name: &str, stream: &str) -> Result<u64> {
         let c = self.client().await?;
-        let r = c.query_publisher_sequence(producer_name, stream).await.map_err(|e| map_client(&e, "query publisher sequence"));
+        let r = c
+            .query_publisher_sequence(producer_name, stream)
+            .await
+            .map_err(|e| map_client(&e, "query publisher sequence"));
         let _ = c.close().await;
         r
     }
@@ -398,27 +449,49 @@ impl StreamSession {
 
     pub async fn publish(&self, req: &StreamPublish) -> Result<Vec<PublishOutcome>> {
         if req.messages.len() > self.profile.limits.max_publish_batch {
-            return Err(CoreError::new(ErrorCode::LimitExceeded, "batch exceeds max_publish_batch"));
+            return Err(CoreError::new(
+                ErrorCode::LimitExceeded,
+                "batch exceeds max_publish_batch",
+            ));
         }
         let mut msgs = Vec::with_capacity(req.messages.len());
         let has_filter = req.messages.iter().any(|m| m.filter_value.is_some());
         for (i, m) in req.messages.iter().enumerate() {
             let body = m.payload.to_bytes()?;
-            msgs.push(to_stream_message(&body, &m.properties, m.publishing_id, m.filter_value.as_deref(), i));
+            msgs.push(to_stream_message(
+                &body,
+                &m.properties,
+                m.publishing_id,
+                m.filter_value.as_deref(),
+                i,
+            ));
         }
         let timeout = Duration::from_millis(req.timeout_ms);
-        let mut builder = self.env.producer().client_provided_name(&format!("{} (stream-producer)", self.profile.connection_name()));
+        let mut builder = self.env.producer().client_provided_name(&format!(
+            "{} (stream-producer)",
+            self.profile.connection_name()
+        ));
         if has_filter {
             builder = builder.filter_value_extractor(|m: &Message| {
                 m.application_properties()
                     .and_then(|p| p.get(FILTER_PROP))
-                    .and_then(|v| if let SimpleValue::String(s) = v { Some(s.clone()) } else { None })
+                    .and_then(|v| {
+                        if let SimpleValue::String(s) = v {
+                            Some(s.clone())
+                        } else {
+                            None
+                        }
+                    })
                     .unwrap_or_default()
             });
         }
         let outcomes = match &req.producer_name {
             Some(name) => {
-                let mut p = builder.name(name).build(&req.stream).await.map_err(producer_err)?;
+                let mut p = builder
+                    .name(name)
+                    .build(&req.stream)
+                    .await
+                    .map_err(producer_err)?;
                 let r = send_all(&mut p, msgs, timeout).await;
                 let _ = p.close().await;
                 r
@@ -445,13 +518,17 @@ impl StreamSession {
             .offset(r.start.spec())
             .client_provided_name(&format!("{} (stream-read)", self.profile.connection_name()));
         if let Some(f) = &r.filter {
-            b = b.filter_input(Some(FilterConfiguration::new(f.clone(), r.match_unfiltered)));
+            b = b.filter_input(Some(FilterConfiguration::new(
+                f.clone(),
+                r.match_unfiltered,
+            )));
         }
         let mut consumer = b.build(&r.stream).await.map_err(consumer_err)?;
         let preview = self.profile.limits.max_payload_preview;
         let mut out = Vec::new();
         let idle = Duration::from_millis(r.idle_ms.max(50));
-        let overall = tokio::time::Instant::now() + Duration::from_millis(self.profile.limits.timeout_ms);
+        let overall =
+            tokio::time::Instant::now() + Duration::from_millis(self.profile.limits.timeout_ms);
         loop {
             if out.len() >= max {
                 break;
@@ -461,7 +538,12 @@ impl StreamSession {
                 Err(_) => break, // idle: reached end of available data
                 Ok(None) => break,
                 Ok(Some(Err(e))) => {
-                    events::log(&*self.sink, "warning", "stream", format!("read on {} stopped: {e}", r.stream));
+                    events::log(
+                        &*self.sink,
+                        "warning",
+                        "stream",
+                        format!("read on {} stopped: {e}", r.stream),
+                    );
                     break;
                 }
                 Ok(Some(Ok(d))) => {
@@ -477,7 +559,13 @@ impl StreamSession {
                             continue;
                         }
                     }
-                    out.push(inbound(&self.id, &r.stream, d.offset(), d.message(), preview));
+                    out.push(inbound(
+                        &self.id,
+                        &r.stream,
+                        d.offset(),
+                        d.message(),
+                        preview,
+                    ));
                 }
             }
             if tokio::time::Instant::now() > overall {
@@ -499,10 +587,15 @@ impl StreamSession {
 
     pub async fn subscribe(self: &Arc<Self>, r: SubscribeRequest) -> Result<StreamSubscription> {
         if self.subs.lock().await.len() >= self.profile.limits.max_consumers {
-            return Err(CoreError::new(ErrorCode::LimitExceeded, "max_consumers reached"));
+            return Err(CoreError::new(
+                ErrorCode::LimitExceeded,
+                "max_consumers reached",
+            ));
         }
         if r.single_active_consumer && r.name.is_none() {
-            return Err(CoreError::invalid("single_active_consumer requires a consumer name"));
+            return Err(CoreError::invalid(
+                "single_active_consumer requires a consumer name",
+            ));
         }
         let mut b = self
             .env
@@ -519,7 +612,16 @@ impl StreamSession {
                 let stream = stream.clone();
                 async move {
                     if let Some(s) = me.upgrade() {
-                        events::log(&*s.sink, "info", "stream", format!("single-active-consumer {} on {stream} is now {}", ctx.name(), if active == 1 { "active" } else { "inactive" }));
+                        events::log(
+                            &*s.sink,
+                            "info",
+                            "stream",
+                            format!(
+                                "single-active-consumer {} on {stream} is now {}",
+                                ctx.name(),
+                                if active == 1 { "active" } else { "inactive" }
+                            ),
+                        );
                     }
                     // Resume from the last stored offset when becoming active.
                     match ctx.client().query_offset(ctx.name(), &ctx.stream()).await {
@@ -530,10 +632,17 @@ impl StreamSession {
             });
         }
         if let Some(f) = &r.filter {
-            b = b.filter_input(Some(FilterConfiguration::new(f.clone(), r.match_unfiltered)));
+            b = b.filter_input(Some(FilterConfiguration::new(
+                f.clone(),
+                r.match_unfiltered,
+            )));
         }
         let consumer = b.build(&r.stream).await.map_err(consumer_err)?;
-        let id = format!("{}/stream/{}", self.id, self.seq.fetch_add(1, Ordering::Relaxed));
+        let id = format!(
+            "{}/stream/{}",
+            self.id,
+            self.seq.fetch_add(1, Ordering::Relaxed)
+        );
         let info = Arc::new(Mutex::new(StreamSubscription {
             id: id.clone(),
             stream: r.stream.clone(),
@@ -545,7 +654,9 @@ impl StreamSession {
         }));
         let handle = consumer.handle();
         let paused = Arc::new(AtomicBool::new(false));
-        let buffer = Arc::new(Mutex::new(BoundedBuffer::<InboundMessage>::new(self.profile.limits.max_buffered_deliveries)));
+        let buffer = Arc::new(Mutex::new(BoundedBuffer::<InboundMessage>::new(
+            self.profile.limits.max_buffered_deliveries,
+        )));
         let task = tokio::spawn(sub_loop(
             Arc::downgrade(self),
             consumer,
@@ -556,13 +667,23 @@ impl StreamSession {
             buffer,
         ));
         let snapshot = info.lock().await.clone();
-        self.subs.lock().await.insert(id, SubHandle { info, task, handle, paused });
+        self.subs.lock().await.insert(
+            id,
+            SubHandle {
+                info,
+                task,
+                handle,
+                paused,
+            },
+        );
         Ok(snapshot)
     }
 
     pub async fn set_paused(&self, id: &str, paused: bool) -> Result<StreamSubscription> {
         let subs = self.subs.lock().await;
-        let s = subs.get(id).ok_or_else(|| CoreError::not_found(format!("no stream subscription {id}")))?;
+        let s = subs
+            .get(id)
+            .ok_or_else(|| CoreError::not_found(format!("no stream subscription {id}")))?;
         s.paused.store(paused, Ordering::SeqCst);
         let mut i = s.info.lock().await;
         i.paused = paused;
@@ -570,7 +691,12 @@ impl StreamSession {
     }
 
     pub async fn unsubscribe(&self, id: &str) -> Result<StreamSubscription> {
-        let s = self.subs.lock().await.remove(id).ok_or_else(|| CoreError::not_found(format!("no stream subscription {id}")))?;
+        let s = self
+            .subs
+            .lock()
+            .await
+            .remove(id)
+            .ok_or_else(|| CoreError::not_found(format!("no stream subscription {id}")))?;
         let _ = s.handle.close().await;
         s.task.abort();
         let mut i = s.info.lock().await.clone();
@@ -668,10 +794,12 @@ async fn flush(s: &StreamSession, id: &str, buffer: &Mutex<BoundedBuffer<Inbound
 const FILTER_PROP: &str = "x-rabbitmq-el-filter";
 
 fn filter_value(m: &Message) -> Option<String> {
-    m.application_properties().and_then(|p| p.get(FILTER_PROP)).and_then(|v| match v {
-        SimpleValue::String(s) => Some(s.clone()),
-        _ => None,
-    })
+    m.application_properties()
+        .and_then(|p| p.get(FILTER_PROP))
+        .and_then(|v| match v {
+            SimpleValue::String(s) => Some(s.clone()),
+            _ => None,
+        })
 }
 
 /// `send` is defined separately on `Producer<Dedup>` and `Producer<NoDedup>`.
@@ -679,7 +807,10 @@ trait SendOne {
     fn send_one(
         &mut self,
         m: Message,
-        tx: tokio::sync::mpsc::Sender<(usize, std::result::Result<rabbitmq_stream_client::ConfirmationStatus, ProducerPublishError>)>,
+        tx: tokio::sync::mpsc::Sender<(
+            usize,
+            std::result::Result<rabbitmq_stream_client::ConfirmationStatus, ProducerPublishError>,
+        )>,
         i: usize,
     ) -> impl std::future::Future<Output = std::result::Result<(), ProducerPublishError>> + Send;
 }
@@ -690,7 +821,13 @@ macro_rules! impl_send_one {
             async fn send_one(
                 &mut self,
                 m: Message,
-                tx: tokio::sync::mpsc::Sender<(usize, std::result::Result<rabbitmq_stream_client::ConfirmationStatus, ProducerPublishError>)>,
+                tx: tokio::sync::mpsc::Sender<(
+                    usize,
+                    std::result::Result<
+                        rabbitmq_stream_client::ConfirmationStatus,
+                        ProducerPublishError,
+                    >,
+                )>,
                 i: usize,
             ) -> std::result::Result<(), ProducerPublishError> {
                 self.send(m, move |res| async move {
@@ -704,15 +841,29 @@ macro_rules! impl_send_one {
 impl_send_one!(rabbitmq_stream_client::Dedup);
 impl_send_one!(rabbitmq_stream_client::NoDedup);
 
-async fn send_all<P: SendOne>(p: &mut P, msgs: Vec<Message>, timeout: Duration) -> Vec<PublishOutcome> {
+async fn send_all<P: SendOne>(
+    p: &mut P,
+    msgs: Vec<Message>,
+    timeout: Duration,
+) -> Vec<PublishOutcome> {
     let n = msgs.len();
     let (tx, mut rx) = tokio::sync::mpsc::channel(n.max(1));
     let mut out: Vec<Option<PublishOutcome>> = vec![None; n];
     for (i, m) in msgs.into_iter().enumerate() {
         let r = p.send_one(m, tx.clone(), i).await;
         if let Err(e) = r {
-            let status = if matches!(e, ProducerPublishError::Closed) { PublishStatus::Failed } else { PublishStatus::Uncertain };
-            out[i] = Some(PublishOutcome { index: i, status, reply_code: None, reply_text: None, error: Some(e.to_string()) });
+            let status = if matches!(e, ProducerPublishError::Closed) {
+                PublishStatus::Failed
+            } else {
+                PublishStatus::Uncertain
+            };
+            out[i] = Some(PublishOutcome {
+                index: i,
+                status,
+                reply_code: None,
+                reply_text: None,
+                error: Some(e.to_string()),
+            });
         }
     }
     drop(tx);
@@ -721,9 +872,27 @@ async fn send_all<P: SendOne>(p: &mut P, msgs: Vec<Message>, timeout: Duration) 
         match tokio::time::timeout_at(deadline, rx.recv()).await {
             Ok(Some((i, res))) => {
                 out[i] = Some(match res {
-                    Ok(c) if c.confirmed() => PublishOutcome { index: i, status: PublishStatus::Confirmed, reply_code: None, reply_text: None, error: None },
-                    Ok(c) => PublishOutcome { index: i, status: PublishStatus::Nacked, reply_code: None, reply_text: Some(format!("{:?}", c.status())), error: None },
-                    Err(e) => PublishOutcome { index: i, status: PublishStatus::Uncertain, reply_code: None, reply_text: None, error: Some(e.to_string()) },
+                    Ok(c) if c.confirmed() => PublishOutcome {
+                        index: i,
+                        status: PublishStatus::Confirmed,
+                        reply_code: None,
+                        reply_text: None,
+                        error: None,
+                    },
+                    Ok(c) => PublishOutcome {
+                        index: i,
+                        status: PublishStatus::Nacked,
+                        reply_code: None,
+                        reply_text: Some(format!("{:?}", c.status())),
+                        error: None,
+                    },
+                    Err(e) => PublishOutcome {
+                        index: i,
+                        status: PublishStatus::Uncertain,
+                        reply_code: None,
+                        reply_text: None,
+                        error: Some(e.to_string()),
+                    },
                 });
             }
             Ok(None) | Err(_) => break,
@@ -732,7 +901,13 @@ async fn send_all<P: SendOne>(p: &mut P, msgs: Vec<Message>, timeout: Duration) 
     out.into_iter()
         .enumerate()
         .map(|(i, o)| {
-            o.unwrap_or(PublishOutcome { index: i, status: PublishStatus::Uncertain, reply_code: None, reply_text: None, error: Some("no confirmation before timeout".into()) })
+            o.unwrap_or(PublishOutcome {
+                index: i,
+                status: PublishStatus::Uncertain,
+                reply_code: None,
+                reply_text: None,
+                error: Some("no confirmation before timeout".into()),
+            })
         })
         .collect()
 }
@@ -740,7 +915,9 @@ async fn send_all<P: SendOne>(p: &mut P, msgs: Vec<Message>, timeout: Duration) 
 fn producer_err(e: ProducerCreateError) -> CoreError {
     match e {
         ProducerCreateError::Create { status, .. } => map_code(&status, "create producer"),
-        ProducerCreateError::StreamDoesNotExist { stream } => CoreError::not_found(format!("stream {stream} does not exist")),
+        ProducerCreateError::StreamDoesNotExist { stream } => {
+            CoreError::not_found(format!("stream {stream} does not exist"))
+        }
         ProducerCreateError::Client(c) => map_client(&c, "create producer"),
         other => map_debug(other, "create producer"),
     }
@@ -749,7 +926,9 @@ fn producer_err(e: ProducerCreateError) -> CoreError {
 fn consumer_err(e: ConsumerCreateError) -> CoreError {
     match e {
         ConsumerCreateError::Create { status, .. } => map_code(&status, "create consumer"),
-        ConsumerCreateError::StreamDoesNotExist { stream } => CoreError::not_found(format!("stream {stream} does not exist")),
+        ConsumerCreateError::StreamDoesNotExist { stream } => {
+            CoreError::not_found(format!("stream {stream} does not exist"))
+        }
         ConsumerCreateError::Client(c) => map_client(&c, "create consumer"),
         other => map_debug(other, "create consumer"),
     }
@@ -764,17 +943,29 @@ fn offset_of(m: &InboundMessage) -> Option<u64> {
 
 /// Parse a retention age like `7D`, `12h`, `30m`, `3600s`, `1Y`, `2M`.
 pub fn parse_age(s: &str) -> Result<Duration> {
+    if !s.is_ascii() || s.len() < 2 {
+        return Err(CoreError::invalid("invalid max_age"));
+    }
     let (num, unit) = s.split_at(s.len().saturating_sub(1));
-    let n: u64 = num.parse().map_err(|_| CoreError::invalid(format!("invalid max_age \"{s}\"")))?;
-    let secs = match unit {
-        "s" => n,
-        "m" => n * 60,
-        "h" => n * 3600,
-        "D" => n * 86_400,
-        "M" => n * 30 * 86_400,
-        "Y" => n * 365 * 86_400,
-        _ => return Err(CoreError::invalid(format!("invalid max_age unit in \"{s}\" (use s, m, h, D, M, Y)"))),
+    let n: u64 = num
+        .parse()
+        .map_err(|_| CoreError::invalid(format!("invalid max_age \"{s}\"")))?;
+    let multiplier = match unit {
+        "s" => 1,
+        "m" => 60,
+        "h" => 3600,
+        "D" => 86_400,
+        "M" => 30 * 86_400,
+        "Y" => 365 * 86_400,
+        _ => {
+            return Err(CoreError::invalid(format!(
+                "invalid max_age unit in \"{s}\" (use s, m, h, D, M, Y)"
+            )))
+        }
     };
+    let secs = n
+        .checked_mul(multiplier)
+        .ok_or_else(|| CoreError::invalid("max_age exceeds supported duration"))?;
     Ok(Duration::from_secs(secs))
 }
 
@@ -786,10 +977,17 @@ fn tls(p: &Profile) -> Result<TlsConfiguration> {
     if let (Some(c), Some(k)) = (&p.tls.client_cert_file, &p.tls.client_key_file) {
         b = b.add_client_certificates_keys(c.clone(), k.clone());
     }
-    b.build().map_err(|e| CoreError::invalid(format!("stream TLS: {e}")))
+    b.build()
+        .map_err(|e| CoreError::invalid(format!("stream TLS: {e}")))
 }
 
-fn to_stream_message(body: &[u8], p: &MessageProperties, publishing_id: Option<u64>, filter: Option<&str>, _i: usize) -> Message {
+fn to_stream_message(
+    body: &[u8],
+    p: &MessageProperties,
+    publishing_id: Option<u64>,
+    filter: Option<&str>,
+    _i: usize,
+) -> Message {
     let mut b = Message::builder().body(body.to_vec());
     if let Some(id) = publishing_id {
         b = b.publishing_id(id);
@@ -872,22 +1070,41 @@ fn simple_to_json(v: &SimpleValue) -> Value {
     }
 }
 
-fn inbound(session: &str, stream: &str, offset: u64, m: &Message, preview: usize) -> InboundMessage {
+fn inbound(
+    session: &str,
+    stream: &str,
+    offset: u64,
+    m: &Message,
+    preview: usize,
+) -> InboundMessage {
     let body = m.data().unwrap_or_default();
     let mut props = MessageProperties::default();
     if let Some(p) = m.properties() {
-        props.message_id = p.message_id.as_ref().map(|id| format!("{id:?}")).map(strip_variant);
-        props.correlation_id = p.correlation_id.as_ref().map(|id| format!("{id:?}")).map(strip_variant);
+        props.message_id = p
+            .message_id
+            .as_ref()
+            .map(|id| format!("{id:?}"))
+            .map(strip_variant);
+        props.correlation_id = p
+            .correlation_id
+            .as_ref()
+            .map(|id| format!("{id:?}"))
+            .map(strip_variant);
         props.content_type = p.content_type.as_ref().map(|s| s.to_string());
         props.content_encoding = p.content_encoding.as_ref().map(|s| s.to_string());
         props.reply_to = p.reply_to.clone();
         props.kind = p.subject.clone();
-        props.user_id = p.user_id.as_ref().map(|u| String::from_utf8_lossy(u).into_owned());
+        props.user_id = p
+            .user_id
+            .as_ref()
+            .map(|u| String::from_utf8_lossy(u).into_owned());
     }
     if let Some(ap) = m.application_properties() {
         for (k, v) in ap.iter() {
             if k == FILTER_PROP {
-                props.annotations.insert("filter_value".into(), simple_to_json(v));
+                props
+                    .annotations
+                    .insert("filter_value".into(), simple_to_json(v));
                 continue;
             }
             props.headers.insert(k.clone(), simple_to_json(v));
@@ -898,7 +1115,11 @@ fn inbound(session: &str, stream: &str, offset: u64, m: &Message, preview: usize
     }
     InboundMessage {
         id: format!("{session}/stream/{stream}/{offset}"),
-        source: DeliverySource::Stream { stream: stream.to_string(), offset, chunk_timestamp: None },
+        source: DeliverySource::Stream {
+            stream: stream.to_string(),
+            offset,
+            chunk_timestamp: None,
+        },
         exchange: String::new(),
         routing_key: String::new(),
         redelivered: false,
@@ -927,6 +1148,8 @@ mod tests {
         assert_eq!(parse_age("90s").unwrap(), Duration::from_secs(90));
         assert!(parse_age("7days").is_err());
         assert!(parse_age("D").is_err());
+        assert!(parse_age("é").is_err());
+        assert!(parse_age("18446744073709551615Y").is_err());
     }
 
     #[test]
@@ -952,7 +1175,8 @@ mod tests {
     fn start_specs() {
         let s: StartAt = serde_json::from_value(json!({"type": "offset", "offset": 5})).unwrap();
         assert!(matches!(s.spec(), OffsetSpecification::Offset(5)));
-        let s: StartAt = serde_json::from_value(json!({"type": "timestamp", "timestamp": 1})).unwrap();
+        let s: StartAt =
+            serde_json::from_value(json!({"type": "timestamp", "timestamp": 1})).unwrap();
         assert!(matches!(s.spec(), OffsetSpecification::Timestamp(1)));
     }
 }

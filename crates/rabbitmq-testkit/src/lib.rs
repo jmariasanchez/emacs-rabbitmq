@@ -15,10 +15,16 @@ pub fn test_profile() -> Profile {
     if let Ok(h) = std::env::var("RMQ_TEST_HOST") {
         p.host = h;
     }
-    if let Some(port) = std::env::var("RMQ_TEST_AMQP_PORT").ok().and_then(|v| v.parse().ok()) {
+    if let Some(port) = std::env::var("RMQ_TEST_AMQP_PORT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+    {
         p.amqp_port = port;
     }
-    if let Some(port) = std::env::var("RMQ_TEST_STREAM_PORT").ok().and_then(|v| v.parse().ok()) {
+    if let Some(port) = std::env::var("RMQ_TEST_STREAM_PORT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+    {
         p.stream_port = port;
     }
     p.management_url = Some(
@@ -137,7 +143,11 @@ impl Admin {
 
     /// Queue message count as seen by the broker. Management stats are
     /// eventually consistent, so poll until `pred` holds or time out.
-    pub async fn wait_queue<F: Fn(&serde_json::Value) -> bool>(&self, name: &str, pred: F) -> serde_json::Value {
+    pub async fn wait_queue<F: Fn(&serde_json::Value) -> bool>(
+        &self,
+        name: &str,
+        pred: F,
+    ) -> serde_json::Value {
         let mut last = serde_json::Value::Null;
         for _ in 0..60 {
             last = self.get(&format!("queues/%2F/{}", pct(name))).await;
@@ -154,7 +164,9 @@ impl Admin {
         let conns = self.get("connections").await;
         let mut n = 0;
         for c in conns.as_array().cloned().unwrap_or_default() {
-            let cname = c["client_properties"]["connection_name"].as_str().unwrap_or("");
+            let cname = c["client_properties"]["connection_name"]
+                .as_str()
+                .unwrap_or("");
             if cname == name {
                 if let Some(id) = c["name"].as_str() {
                     self.delete(&format!("connections/{}", pct(id))).await;
@@ -171,7 +183,10 @@ impl Admin {
             let conns = self.get("connections").await;
             if conns
                 .as_array()
-                .map(|a| a.iter().any(|c| c["client_properties"]["connection_name"] == name))
+                .map(|a| {
+                    a.iter()
+                        .any(|c| c["client_properties"]["connection_name"] == name)
+                })
                 .unwrap_or(false)
             {
                 return;

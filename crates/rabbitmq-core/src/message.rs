@@ -63,6 +63,9 @@ impl Payload {
 
 fn decode_hex(s: &str) -> Result<Vec<u8>> {
     let clean: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+    if !clean.is_ascii() {
+        return Err(CoreError::invalid("invalid hex payload"));
+    }
     if clean.len() % 2 != 0 {
         return Err(CoreError::invalid("hex payload has odd length"));
     }
@@ -167,12 +170,16 @@ impl MessageProperties {
     pub fn validate(&self) -> Result<()> {
         if let Some(m) = self.delivery_mode {
             if m != 1 && m != 2 {
-                return Err(CoreError::invalid("delivery_mode must be 1 (transient) or 2 (persistent)"));
+                return Err(CoreError::invalid(
+                    "delivery_mode must be 1 (transient) or 2 (persistent)",
+                ));
             }
         }
         if let Some(e) = &self.expiration {
             if e.parse::<u64>().is_err() {
-                return Err(CoreError::invalid("expiration must be a non-negative integer number of milliseconds"));
+                return Err(CoreError::invalid(
+                    "expiration must be a non-negative integer number of milliseconds",
+                ));
             }
         }
         Ok(())
@@ -313,12 +320,19 @@ pub enum Settlement {
     Ack,
     /// Negative acknowledgement; `requeue` decides whether the broker
     /// requeues or dead-letters/drops.
-    Nack { requeue: bool },
-    Reject { requeue: bool },
+    Nack {
+        requeue: bool,
+    },
+    Reject {
+        requeue: bool,
+    },
     /// AMQP 1.0 `released` outcome.
     Release,
     /// AMQP 1.0 `modified` outcome.
-    Modify { delivery_failed: bool, undeliverable_here: bool },
+    Modify {
+        delivery_failed: bool,
+        undeliverable_here: bool,
+    },
 }
 
 pub fn now_millis() -> u64 {
@@ -340,9 +354,29 @@ mod tests {
         assert_eq!(p.to_bytes().unwrap(), bin);
         let t = Payload::from_bytes("héllo".as_bytes());
         assert_eq!(t.encoding, PayloadEncoding::Utf8);
-        let h = Payload { encoding: PayloadEncoding::Hex, data: "00 ff 10".into() };
+        let h = Payload {
+            encoding: PayloadEncoding::Hex,
+            data: "00 ff 10".into(),
+        };
         assert_eq!(h.to_bytes().unwrap(), vec![0, 255, 16]);
-        assert!(Payload { encoding: PayloadEncoding::Hex, data: "0".into() }.to_bytes().is_err());
+        assert!(Payload {
+            encoding: PayloadEncoding::Hex,
+            data: "0".into()
+        }
+        .to_bytes()
+        .is_err());
+    }
+
+    #[test]
+    fn non_ascii_hex_is_an_error_not_a_panic() {
+        for data in ["a€", "éé", "🙂"] {
+            assert!(Payload {
+                encoding: PayloadEncoding::Hex,
+                data: data.into()
+            }
+            .to_bytes()
+            .is_err());
+        }
     }
 
     #[test]

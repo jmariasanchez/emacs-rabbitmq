@@ -20,7 +20,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 fn p<T: DeserializeOwned>(params: &Value) -> Result<T> {
-    serde_json::from_value(params.clone()).map_err(|e| CoreError::invalid(format!("invalid params: {e}")))
+    serde_json::from_value(params.clone())
+        .map_err(|e| CoreError::invalid(format!("invalid params: {e}")))
 }
 
 fn s(params: &Value, key: &str) -> Result<String> {
@@ -44,7 +45,11 @@ fn u(params: &Value, key: &str, default: u64) -> u64 {
 }
 
 fn obj(params: &Value, key: &str) -> Map<String, Value> {
-    params.get(key).and_then(Value::as_object).cloned().unwrap_or_default()
+    params
+        .get(key)
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default()
 }
 
 fn ok<T: serde::Serialize>(v: T) -> Result<Value> {
@@ -127,17 +132,25 @@ pub async fn handle(state: &Arc<State>, method: &str, params: &Value) -> Result<
 }
 
 async fn session_open(state: &Arc<State>, params: &Value) -> Result<Value> {
-    let profile: Profile = p(params.get("profile").ok_or_else(|| CoreError::invalid("missing \"profile\""))?)?;
+    let profile: Profile = p(params
+        .get("profile")
+        .ok_or_else(|| CoreError::invalid("missing \"profile\""))?)?;
     let id = opt_s(params, "session").unwrap_or_else(|| profile.name.clone());
     if state.sessions.lock().await.contains_key(&id) {
-        return Err(CoreError::new(ErrorCode::PreconditionFailed, format!("session {id} is already open")));
+        return Err(CoreError::new(
+            ErrorCode::PreconditionFailed,
+            format!("session {id} is already open"),
+        ));
     }
     let mut sess = BridgeSession::new(id.clone(), profile, state.shared_sink());
     // Probe the Management API for version-gated features (best effort).
     let mut warnings = Vec::new();
     if let Some(m) = &sess.mgmt {
         match m.overview().await {
-            Ok(o) => sess.features = BrokerVersion::parse(&o.rabbitmq_version).map(FeatureMatrix::for_version),
+            Ok(o) => {
+                sess.features =
+                    BrokerVersion::parse(&o.rabbitmq_version).map(FeatureMatrix::for_version)
+            }
             Err(e) => warnings.push(format!("management API unavailable: {}", e.message)),
         }
     }
@@ -157,7 +170,12 @@ async fn session_open(state: &Arc<State>, params: &Value) -> Result<Value> {
     Ok(info)
 }
 
-async fn session_method(state: &Arc<State>, sess: &Arc<BridgeSession>, method: &str, params: &Value) -> Result<Value> {
+async fn session_method(
+    state: &Arc<State>,
+    sess: &Arc<BridgeSession>,
+    method: &str,
+    params: &Value,
+) -> Result<Value> {
     let limits = sess.profile.limits;
     let timeout = Duration::from_millis(u(params, "timeout_ms", limits.timeout_ms));
     match method {
@@ -173,16 +191,27 @@ async fn session_method(state: &Arc<State>, sess: &Arc<BridgeSession>, method: &
         "exchange.delete" => {
             require_session_vhost(sess, params)?;
             let name = s(params, "name")?;
-            sess.amqp().await?.delete_exchange(&name, b(params, "if_unused")).await?;
+            sess.amqp()
+                .await?
+                .delete_exchange(&name, b(params, "if_unused"))
+                .await?;
             Ok(json!({"deleted": name}))
         }
         "queue.declare" => {
             require_session_vhost(sess, params)?;
-            let qt = QueueType::parse(params.get("type").and_then(Value::as_str).unwrap_or("classic"))?;
+            let qt = QueueType::parse(
+                params
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("classic"),
+            )?;
             let spec = QueueSpec {
                 name: s(params, "name").unwrap_or_default(),
                 queue_type: qt,
-                durable: params.get("durable").and_then(Value::as_bool).unwrap_or(true),
+                durable: params
+                    .get("durable")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true),
                 exclusive: b(params, "exclusive"),
                 auto_delete: b(params, "auto_delete"),
                 arguments: obj(params, "arguments"),
@@ -191,13 +220,24 @@ async fn session_method(state: &Arc<State>, sess: &Arc<BridgeSession>, method: &
         }
         "queue.inspect" => {
             require_session_vhost(sess, params)?;
-            let spec = QueueSpec { name: s(params, "name")?, queue_type: QueueType::Classic, durable: true, exclusive: false, auto_delete: false, arguments: Map::new() };
+            let spec = QueueSpec {
+                name: s(params, "name")?,
+                queue_type: QueueType::Classic,
+                durable: true,
+                exclusive: false,
+                auto_delete: false,
+                arguments: Map::new(),
+            };
             ok(sess.amqp().await?.declare_queue(spec, true).await?)
         }
         "queue.delete" => {
             require_session_vhost(sess, params)?;
             let name = s(params, "name")?;
-            let n = sess.amqp().await?.delete_queue(&name, b(params, "if_unused"), b(params, "if_empty")).await?;
+            let n = sess
+                .amqp()
+                .await?
+                .delete_queue(&name, b(params, "if_unused"), b(params, "if_empty"))
+                .await?;
             Ok(json!({"deleted": name, "messages_deleted": n}))
         }
         "queue.purge" => {
@@ -210,13 +250,27 @@ async fn session_method(state: &Arc<State>, sess: &Arc<BridgeSession>, method: &
             require_session_vhost(sess, params)?;
             let dt = opt_s(params, "destination_type").unwrap_or_else(|| "queue".into());
             if dt != "queue" && dt != "exchange" {
-                return Err(CoreError::invalid("destination_type must be \"queue\" or \"exchange\""));
+                return Err(CoreError::invalid(
+                    "destination_type must be \"queue\" or \"exchange\"",
+                ));
             }
             let dest = s(params, "destination")?;
             let src = s(params, "source")?;
             let rk = opt_s(params, "routing_key").unwrap_or_default();
-            sess.amqp().await?.bind(&dt, &dest, &src, &rk, &obj(params, "arguments"), method == "binding.delete").await?;
-            Ok(json!({"source": src, "destination": dest, "destination_type": dt, "routing_key": rk, "bound": method == "binding.create"}))
+            sess.amqp()
+                .await?
+                .bind(
+                    &dt,
+                    &dest,
+                    &src,
+                    &rk,
+                    &obj(params, "arguments"),
+                    method == "binding.delete",
+                )
+                .await?;
+            Ok(
+                json!({"source": src, "destination": dest, "destination_type": dt, "routing_key": rk, "bound": method == "binding.create"}),
+            )
         }
 
         // ------------------------------------------------ AMQP 0-9-1 messaging
@@ -232,7 +286,11 @@ async fn session_method(state: &Arc<State>, sess: &Arc<BridgeSession>, method: &
             if pb.messages.is_empty() {
                 return Err(CoreError::invalid("messages must not be empty"));
             }
-            let outcomes = sess.amqp().await?.publish(&pb.messages, pb.mode, timeout).await?;
+            let outcomes = sess
+                .amqp()
+                .await?
+                .publish(&pb.messages, pb.mode, timeout)
+                .await?;
             let summary = PublishSummary::from_outcomes(&outcomes);
             Ok(json!({"summary": summary, "outcomes": outcomes}))
         }
@@ -240,10 +298,16 @@ async fn session_method(state: &Arc<State>, sess: &Arc<BridgeSession>, method: &
             require_session_vhost(sess, params)?;
             let q = s(params, "queue")?;
             let count = u(params, "count", 1) as usize;
-            ok(sess.amqp().await?.get(&q, count, b(params, "auto_ack")).await?)
+            ok(sess
+                .amqp()
+                .await?
+                .get(&q, count, b(params, "auto_ack"))
+                .await?)
         }
         "message.settle" => {
-            let how: Settlement = p(params.get("outcome").ok_or_else(|| CoreError::invalid("missing \"outcome\""))?)?;
+            let how: Settlement = p(params
+                .get("outcome")
+                .ok_or_else(|| CoreError::invalid("missing \"outcome\""))?)?;
             let ids: Vec<String> = match params.get("ids") {
                 Some(v) => p(v)?,
                 None => vec![s(params, "id")?],
@@ -267,10 +331,22 @@ async fn session_method(state: &Arc<State>, sess: &Arc<BridgeSession>, method: &
             ok(sess.amqp().await?.consume(o).await?)
         }
         "consumer.cancel" => ok(sess.amqp().await?.cancel(&s(params, "consumer")?).await?),
-        "consumer.pause" => ok(sess.amqp().await?.set_paused(&s(params, "consumer")?, true).await?),
-        "consumer.resume" => ok(sess.amqp().await?.set_paused(&s(params, "consumer")?, false).await?),
+        "consumer.pause" => ok(sess
+            .amqp()
+            .await?
+            .set_paused(&s(params, "consumer")?, true)
+            .await?),
+        "consumer.resume" => ok(sess
+            .amqp()
+            .await?
+            .set_paused(&s(params, "consumer")?, false)
+            .await?),
         "consumer.drain" => {
-            let (msgs, dropped) = sess.amqp().await?.drain(&s(params, "consumer")?, u(params, "max", 500) as usize).await?;
+            let (msgs, dropped) = sess
+                .amqp()
+                .await?
+                .drain(&s(params, "consumer")?, u(params, "max", 500) as usize)
+                .await?;
             Ok(json!({"messages": msgs, "dropped": dropped}))
         }
 
@@ -306,7 +382,9 @@ async fn session_method(state: &Arc<State>, sess: &Arc<BridgeSession>, method: &
                 let ovh = opt_s(params, "other_vhost").unwrap_or_else(|| o.profile.vhost.clone());
                 o.mgmt()?.topology(&ovh).await?
             } else {
-                return Err(CoreError::invalid("pass either \"definitions\" or \"other_session\""));
+                return Err(CoreError::invalid(
+                    "pass either \"definitions\" or \"other_session\"",
+                ));
             };
             ok(diff(&live, &other))
         }
@@ -319,7 +397,10 @@ async fn session_method(state: &Arc<State>, sess: &Arc<BridgeSession>, method: &
         }
         "stream.delete" => {
             let n = s(params, "name")?;
-            sess.stream().await?.delete(&n, b(params, "super_stream")).await?;
+            sess.stream()
+                .await?
+                .delete(&n, b(params, "super_stream"))
+                .await?;
             Ok(json!({"deleted": n}))
         }
         "stream.publish" => {
@@ -327,11 +408,31 @@ async fn session_method(state: &Arc<State>, sess: &Arc<BridgeSession>, method: &
             let outcomes = sess.stream().await?.publish(&r).await?;
             Ok(json!({"summary": PublishSummary::from_outcomes(&outcomes), "outcomes": outcomes}))
         }
-        "stream.read" => ok(sess.stream().await?.read(&p::<ReadRequest>(params)?).await?),
-        "stream.subscribe" => ok(sess.stream().await?.subscribe(p::<SubscribeRequest>(params)?).await?),
-        "stream.unsubscribe" => ok(sess.stream().await?.unsubscribe(&s(params, "subscription")?).await?),
-        "stream.pause" => ok(sess.stream().await?.set_paused(&s(params, "subscription")?, true).await?),
-        "stream.resume" => ok(sess.stream().await?.set_paused(&s(params, "subscription")?, false).await?),
+        "stream.read" => ok(sess
+            .stream()
+            .await?
+            .read(&p::<ReadRequest>(params)?)
+            .await?),
+        "stream.subscribe" => ok(sess
+            .stream()
+            .await?
+            .subscribe(p::<SubscribeRequest>(params)?)
+            .await?),
+        "stream.unsubscribe" => ok(sess
+            .stream()
+            .await?
+            .unsubscribe(&s(params, "subscription")?)
+            .await?),
+        "stream.pause" => ok(sess
+            .stream()
+            .await?
+            .set_paused(&s(params, "subscription")?, true)
+            .await?),
+        "stream.resume" => ok(sess
+            .stream()
+            .await?
+            .set_paused(&s(params, "subscription")?, false)
+            .await?),
         "stream.subscriptions" => ok(sess.stream().await?.subscriptions().await),
         "stream.metadata" => {
             let streams: Vec<String> = match params.get("streams") {
@@ -340,17 +441,46 @@ async fn session_method(state: &Arc<State>, sess: &Arc<BridgeSession>, method: &
             };
             sess.stream().await?.metadata(&streams).await
         }
-        "stream.partitions" => ok(sess.stream().await?.partitions(&s(params, "super_stream")?).await?),
-        "stream.route" => ok(sess.stream().await?.route(&s(params, "super_stream")?, &s(params, "routing_key")?).await?),
-        "stream.query_offset" => ok(sess.stream().await?.query_offset(&s(params, "consumer")?, &s(params, "stream")?).await?),
+        "stream.partitions" => ok(sess
+            .stream()
+            .await?
+            .partitions(&s(params, "super_stream")?)
+            .await?),
+        "stream.route" => ok(sess
+            .stream()
+            .await?
+            .route(&s(params, "super_stream")?, &s(params, "routing_key")?)
+            .await?),
+        "stream.query_offset" => ok(sess
+            .stream()
+            .await?
+            .query_offset(&s(params, "consumer")?, &s(params, "stream")?)
+            .await?),
         "stream.store_offset" => {
-            sess.stream().await?.store_offset(&s(params, "consumer")?, &s(params, "stream")?, u(params, "offset", 0)).await?;
+            sess.stream()
+                .await?
+                .store_offset(
+                    &s(params, "consumer")?,
+                    &s(params, "stream")?,
+                    u(params, "offset", 0),
+                )
+                .await?;
             Ok(json!({"stored": true}))
         }
-        "stream.producer_sequence" => ok(sess.stream().await?.producer_sequence(&s(params, "producer")?, &s(params, "stream")?).await?),
+        "stream.producer_sequence" => ok(sess
+            .stream()
+            .await?
+            .producer_sequence(&s(params, "producer")?, &s(params, "stream")?)
+            .await?),
 
         // ------------------------------------------------ AMQP 1.0
-        "amqp10.sender.open" => ok(sess.amqp10().await?.open_sender(&p::<Address>(params.get("address").unwrap_or(&Value::Null))?).await?),
+        "amqp10.sender.open" => ok(sess
+            .amqp10()
+            .await?
+            .open_sender(&p::<Address>(
+                params.get("address").unwrap_or(&Value::Null),
+            )?)
+            .await?),
         "amqp10.send" => {
             #[derive(Deserialize)]
             struct M {
@@ -359,22 +489,44 @@ async fn session_method(state: &Arc<State>, sess: &Arc<BridgeSession>, method: &
                 properties: MessageProperties,
             }
             let msgs: Vec<M> = p(params.get("messages").unwrap_or(&Value::Null))?;
-            let msgs: Vec<_> = msgs.into_iter().map(|m| (m.payload, m.properties)).collect();
-            let outcomes = sess.amqp10().await?.send(&s(params, "link")?, &msgs, timeout).await?;
+            let msgs: Vec<_> = msgs
+                .into_iter()
+                .map(|m| (m.payload, m.properties))
+                .collect();
+            let outcomes = sess
+                .amqp10()
+                .await?
+                .send(&s(params, "link")?, &msgs, timeout)
+                .await?;
             Ok(json!({"summary": PublishSummary::from_outcomes(&outcomes), "outcomes": outcomes}))
         }
         "amqp10.sender.close" => {
-            sess.amqp10().await?.close_sender(&s(params, "link")?).await?;
+            sess.amqp10()
+                .await?
+                .close_sender(&s(params, "link")?)
+                .await?;
             Ok(json!({"closed": true}))
         }
-        "amqp10.receiver.open" => ok(sess.amqp10().await?.open_receiver(p::<ReceiverOptions>(params)?).await?),
+        "amqp10.receiver.open" => ok(sess
+            .amqp10()
+            .await?
+            .open_receiver(p::<ReceiverOptions>(params)?)
+            .await?),
         "amqp10.settle" => {
-            let how: Settlement = p(params.get("outcome").ok_or_else(|| CoreError::invalid("missing \"outcome\""))?)?;
-            sess.amqp10().await?.settle(&s(params, "link")?, u(params, "delivery_id", 0) as u32, how).await?;
+            let how: Settlement = p(params
+                .get("outcome")
+                .ok_or_else(|| CoreError::invalid("missing \"outcome\""))?)?;
+            sess.amqp10()
+                .await?
+                .settle(&s(params, "link")?, u(params, "delivery_id", 0) as u32, how)
+                .await?;
             Ok(json!({"settled": true}))
         }
         "amqp10.credit" => {
-            sess.amqp10().await?.set_credit(&s(params, "link")?, u(params, "credit", 10) as u32).await?;
+            sess.amqp10()
+                .await?
+                .set_credit(&s(params, "link")?, u(params, "credit", 10) as u32)
+                .await?;
             Ok(json!({"credit": u(params, "credit", 10)}))
         }
         "amqp10.drain" => {
@@ -382,13 +534,19 @@ async fn session_method(state: &Arc<State>, sess: &Arc<BridgeSession>, method: &
             Ok(json!({"drained": true}))
         }
         "amqp10.receiver.close" => {
-            sess.amqp10().await?.close_receiver(&s(params, "link")?).await?;
+            sess.amqp10()
+                .await?
+                .close_receiver(&s(params, "link")?)
+                .await?;
             Ok(json!({"closed": true}))
         }
         "amqp10.links" => ok(sess.amqp10().await?.links().await),
 
         m if m.starts_with("mgmt.") => mgmt(sess, m, params).await,
-        other => Err(CoreError::new(ErrorCode::InvalidParams, format!("method {other} not implemented"))),
+        other => Err(CoreError::new(
+            ErrorCode::InvalidParams,
+            format!("method {other} not implemented"),
+        )),
     }
 }
 
@@ -426,7 +584,9 @@ async fn mgmt(sess: &Arc<BridgeSession>, method: &str, params: &Value) -> Result
         "mgmt.global_parameters" => ok(m.global_parameters().await?),
         "mgmt.vhost_limits" => ok(m.vhost_limits(vh.as_deref()).await?),
         "mgmt.user_limits" => ok(m.user_limits().await?),
-        "mgmt.definitions.export" => Ok(rabbitmq_core::redact::redact_json(&m.export_definitions(vh.as_deref()).await?)),
+        "mgmt.definitions.export" => Ok(rabbitmq_core::redact::redact_json(
+            &m.export_definitions(vh.as_deref()).await?,
+        )),
         "mgmt.stream_connections" => ok(m.stream_connections().await?),
         "mgmt.stream_publishers" => ok(m.stream_publishers(vh.as_deref()).await?),
         "mgmt.stream_consumers" => ok(m.stream_consumers(vh.as_deref()).await?),
@@ -450,7 +610,12 @@ async fn mgmt(sess: &Arc<BridgeSession>, method: &str, params: &Value) -> Result
         }
         "mgmt.user.put" => {
             let n = s(params, "name")?;
-            m.put_user(&n, opt_s(params, "password").as_deref(), &opt_s(params, "tags").unwrap_or_default()).await?;
+            m.put_user(
+                &n,
+                opt_s(params, "password").as_deref(),
+                &opt_s(params, "tags").unwrap_or_default(),
+            )
+            .await?;
             Ok(json!({"user": n}))
         }
         "mgmt.user.delete" => {
@@ -460,7 +625,14 @@ async fn mgmt(sess: &Arc<BridgeSession>, method: &str, params: &Value) -> Result
         }
         "mgmt.permissions.set" => {
             let user = s(params, "user")?;
-            m.set_permissions(&vh_or(), &user, &s(params, "configure")?, &s(params, "write")?, &s(params, "read")?).await?;
+            m.set_permissions(
+                &vh_or(),
+                &user,
+                &s(params, "configure")?,
+                &s(params, "write")?,
+                &s(params, "read")?,
+            )
+            .await?;
             Ok(json!({"user": user, "vhost": vh_or()}))
         }
         "mgmt.permissions.clear" => {
@@ -470,7 +642,14 @@ async fn mgmt(sess: &Arc<BridgeSession>, method: &str, params: &Value) -> Result
         }
         "mgmt.topic_permissions.set" => {
             let user = s(params, "user")?;
-            m.set_topic_permissions(&vh_or(), &user, &s(params, "exchange")?, &s(params, "write")?, &s(params, "read")?).await?;
+            m.set_topic_permissions(
+                &vh_or(),
+                &user,
+                &s(params, "exchange")?,
+                &s(params, "write")?,
+                &s(params, "read")?,
+            )
+            .await?;
             Ok(json!({"user": user}))
         }
         "mgmt.topic_permissions.clear" => {
@@ -506,7 +685,10 @@ async fn mgmt(sess: &Arc<BridgeSession>, method: &str, params: &Value) -> Result
         }
         "mgmt.vhost_limit.set" => {
             let l = s(params, "limit")?;
-            let v = params.get("value").and_then(Value::as_i64).ok_or_else(|| CoreError::invalid("missing integer \"value\""))?;
+            let v = params
+                .get("value")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| CoreError::invalid("missing integer \"value\""))?;
             m.set_vhost_limit(&vh_or(), &l, v).await?;
             Ok(json!({"limit": l, "value": v}))
         }
@@ -517,23 +699,36 @@ async fn mgmt(sess: &Arc<BridgeSession>, method: &str, params: &Value) -> Result
         }
         "mgmt.connection.close" => {
             let n = s(params, "name")?;
-            m.close_connection(&n, &opt_s(params, "reason").unwrap_or_else(|| "closed via rabbitmq.el".into())).await?;
+            m.close_connection(
+                &n,
+                &opt_s(params, "reason").unwrap_or_else(|| "closed via rabbitmq.el".into()),
+            )
+            .await?;
             Ok(json!({"closed": n}))
         }
         "mgmt.definitions.import" => {
-            let defs = params.get("definitions").ok_or_else(|| CoreError::invalid("missing \"definitions\""))?;
+            let defs = params
+                .get("definitions")
+                .ok_or_else(|| CoreError::invalid("missing \"definitions\""))?;
             m.import_definitions(vh.as_deref(), defs).await?;
             Ok(json!({"imported": true}))
         }
-        other => Err(CoreError::new(ErrorCode::InvalidParams, format!("method {other} not implemented"))),
+        other => Err(CoreError::new(
+            ErrorCode::InvalidParams,
+            format!("method {other} not implemented"),
+        )),
     }
 }
 
 /// Queues with dead-lettering configured (by argument or effective policy),
 /// where messages go, and whether the target exists.
-async fn dead_letter_report(m: &rabbitmq_management::ManagementClient, vhost: &str) -> Result<Value> {
-    let queues: Vec<rabbitmq_management::QueueInfo> = serde_json::from_value(m.queues(Some(vhost), &ListQuery::default()).await?)
-        .map_err(|e| CoreError::internal(e.to_string()))?;
+async fn dead_letter_report(
+    m: &rabbitmq_management::ManagementClient,
+    vhost: &str,
+) -> Result<Value> {
+    let queues: Vec<rabbitmq_management::QueueInfo> =
+        serde_json::from_value(m.queues(Some(vhost), &ListQuery::default()).await?)
+            .map_err(|e| CoreError::internal(e.to_string()))?;
     let topo = m.topology(vhost).await?;
     let mut out = Vec::new();
     for q in &queues {
@@ -570,7 +765,9 @@ async fn dead_letter_report(m: &rabbitmq_management::ManagementClient, vhost: &s
             "messages": q.messages,
         }));
     }
-    sampled(json!({"vhost": vhost, "queues": out, "note": "Targets are predictions from current bindings."}))
+    sampled(
+        json!({"vhost": vhost, "queues": out, "note": "Targets are predictions from current bindings."}),
+    )
 }
 
 async fn diagnostics(state: &Arc<State>) -> Result<Value> {
@@ -579,7 +776,12 @@ async fn diagnostics(state: &Arc<State>) -> Result<Value> {
     for s in sessions {
         infos.push(s.info().await);
     }
-    let recent: Vec<Value> = state.sink.recent.lock().map(|r| r.iter().cloned().collect()).unwrap_or_default();
+    let recent: Vec<Value> = state
+        .sink
+        .recent
+        .lock()
+        .map(|r| r.iter().cloned().collect())
+        .unwrap_or_default();
     let audit = state.audit.lock().map(|a| a.recent(50)).unwrap_or_default();
     Ok(rabbitmq_core::redact::redact_json(&json!({
         "bridge": {

@@ -404,7 +404,10 @@ impl ListQuery {
         let mut q = Vec::new();
         if let Some(p) = self.page {
             q.push(("page".into(), p.to_string()));
-            q.push(("page_size".into(), self.page_size.unwrap_or(100).to_string()));
+            q.push((
+                "page_size".into(),
+                self.page_size.unwrap_or(100).to_string(),
+            ));
         }
         if let Some(n) = &self.name {
             q.push(("name".into(), n.clone()));
@@ -453,8 +456,10 @@ fn v(vhost: &str) -> String {
 impl ManagementClient {
     pub fn from_profile(p: &Profile) -> Result<Self> {
         let base = p.management_url.clone().ok_or_else(|| {
-            CoreError::unsupported("profile has no management_url; Management API features are unavailable")
-                .with_hint("Set :management-url in the profile, e.g. http://localhost:15672")
+            CoreError::unsupported(
+                "profile has no management_url; Management API features are unavailable",
+            )
+            .with_hint("Set :management-url in the profile, e.g. http://localhost:15672")
         })?;
         let mut b = reqwest::Client::builder()
             .timeout(Duration::from_millis(p.limits.timeout_ms))
@@ -471,7 +476,11 @@ impl ManagementClient {
         if let (Some(cert), Some(key)) = (&p.tls.client_cert_file, &p.tls.client_key_file) {
             let mut pem = std::fs::read(cert)
                 .map_err(|e| CoreError::invalid(format!("cannot read client cert {cert}: {e}")))?;
-            pem.extend(std::fs::read(key).map_err(|e| CoreError::invalid(format!("cannot read client key {key}: {e}")))?);
+            pem.extend(
+                std::fs::read(key).map_err(|e| {
+                    CoreError::invalid(format!("cannot read client key {key}: {e}"))
+                })?,
+            );
             let id = reqwest::Identity::from_pem(&pem)
                 .map_err(|e| CoreError::invalid(format!("invalid client certificate/key: {e}")))?;
             b = b.identity(id);
@@ -479,7 +488,9 @@ impl ManagementClient {
         if !p.tls.verify {
             b = b.danger_accept_invalid_certs(true);
         }
-        let http = b.build().map_err(|e| CoreError::internal(format!("http client: {e}")))?;
+        let http = b
+            .build()
+            .map_err(|e| CoreError::internal(format!("http client: {e}")))?;
         Ok(Self {
             base: base.trim_end_matches('/').to_string(),
             user: p.username.clone(),
@@ -496,13 +507,22 @@ impl ManagementClient {
         format!("{}/api/{}", self.base, path.trim_start_matches('/'))
     }
 
-    async fn send(&self, req: reqwest::RequestBuilder, what: &str, mutating: bool) -> Result<reqwest::Response> {
+    async fn send(
+        &self,
+        req: reqwest::RequestBuilder,
+        what: &str,
+        mutating: bool,
+    ) -> Result<reqwest::Response> {
         let resp = req
             .basic_auth(&self.user, Some(self.password.expose()))
             .send()
             .await
             .map_err(|e| {
-                let code = if e.is_timeout() { ErrorCode::Timeout } else { ErrorCode::ConnectionFailed };
+                let code = if e.is_timeout() {
+                    ErrorCode::Timeout
+                } else {
+                    ErrorCode::ConnectionFailed
+                };
                 // A mutating request that timed out may still have been applied.
                 CoreError::new(code, format!("{what}: {e}"))
                     .retryable(!mutating)
@@ -539,33 +559,56 @@ impl ManagementClient {
         self.get_query(path, &[]).await
     }
 
-    pub async fn get_query<T: DeserializeOwned>(&self, path: &str, query: &[(String, String)]) -> Result<T> {
+    pub async fn get_query<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &[(String, String)],
+    ) -> Result<T> {
         let resp = self
-            .send(self.http.get(self.url(path)).query(query), &format!("GET {path}"), false)
+            .send(
+                self.http.get(self.url(path)).query(query),
+                &format!("GET {path}"),
+                false,
+            )
             .await?;
-        resp.json::<T>()
-            .await
-            .map_err(|e| CoreError::new(ErrorCode::ManagementApi, format!("GET {path}: unexpected response: {e}")))
+        resp.json::<T>().await.map_err(|e| {
+            CoreError::new(
+                ErrorCode::ManagementApi,
+                format!("GET {path}: unexpected response: {e}"),
+            )
+        })
     }
 
     pub async fn put(&self, path: &str, body: &Value) -> Result<()> {
-        self.send(self.http.put(self.url(path)).json(body), &format!("PUT {path}"), true)
-            .await
-            .map(|_| ())
+        self.send(
+            self.http.put(self.url(path)).json(body),
+            &format!("PUT {path}"),
+            true,
+        )
+        .await
+        .map(|_| ())
     }
 
     pub async fn post(&self, path: &str, body: &Value) -> Result<Value> {
         let r = self
-            .send(self.http.post(self.url(path)).json(body), &format!("POST {path}"), true)
+            .send(
+                self.http.post(self.url(path)).json(body),
+                &format!("POST {path}"),
+                true,
+            )
             .await?;
         let text = r.text().await.unwrap_or_default();
         Ok(serde_json::from_str(&text).unwrap_or(Value::Null))
     }
 
     pub async fn delete(&self, path: &str, query: &[(String, String)]) -> Result<()> {
-        self.send(self.http.delete(self.url(path)).query(query), &format!("DELETE {path}"), true)
-            .await
-            .map(|_| ())
+        self.send(
+            self.http.delete(self.url(path)).query(query),
+            &format!("DELETE {path}"),
+            true,
+        )
+        .await
+        .map(|_| ())
     }
 
     /// List endpoint that returns either a plain array or a page.
@@ -616,20 +659,33 @@ impl ManagementClient {
             ("local_alarms", "health/checks/local-alarms"),
             ("virtual_hosts", "health/checks/virtual-hosts"),
             ("port_listener_amqp", "health/checks/port-listener/5672"),
-            ("protocol_listener_amqp", "health/checks/protocol-listener/amqp"),
+            (
+                "protocol_listener_amqp",
+                "health/checks/protocol-listener/amqp",
+            ),
             ("quorum_critical", "health/checks/node-is-quorum-critical"),
-            ("certificate_expiration", "health/checks/certificate-expiration/1/months"),
+            (
+                "certificate_expiration",
+                "health/checks/certificate-expiration/1/months",
+            ),
         ];
         let mut out = Map::new();
         for (key, path) in checks {
-            let r = self.http.get(self.url(path)).basic_auth(&self.user, Some(self.password.expose())).send().await;
+            let r = self
+                .http
+                .get(self.url(path))
+                .basic_auth(&self.user, Some(self.password.expose()))
+                .send()
+                .await;
             let entry = match r {
                 Ok(resp) => {
                     let status = resp.status().as_u16();
                     let body: Value = resp.json().await.unwrap_or(Value::Null);
                     json!({ "ok": status == 200, "http_status": status, "body": body })
                 }
-                Err(e) => json!({ "ok": false, "error": rabbitmq_core::redact::redact_text(&e.to_string()) }),
+                Err(e) => {
+                    json!({ "ok": false, "error": rabbitmq_core::redact::redact_text(&e.to_string()) })
+                }
             };
             out.insert(key.into(), entry);
         }
@@ -661,12 +717,20 @@ impl ManagementClient {
         self.list::<QueueInfo>(&path, q).await
     }
     pub async fn queue(&self, vhost: &str, name: &str) -> Result<QueueInfo> {
-        self.get(&format!("queues/{}/{}", v(vhost), pct(name))).await
+        self.get(&format!("queues/{}/{}", v(vhost), pct(name)))
+            .await
     }
     pub async fn declare_queue(&self, vhost: &str, name: &str, body: &Value) -> Result<()> {
-        self.put(&format!("queues/{}/{}", v(vhost), pct(name)), body).await
+        self.put(&format!("queues/{}/{}", v(vhost), pct(name)), body)
+            .await
     }
-    pub async fn delete_queue(&self, vhost: &str, name: &str, if_empty: bool, if_unused: bool) -> Result<()> {
+    pub async fn delete_queue(
+        &self,
+        vhost: &str,
+        name: &str,
+        if_empty: bool,
+        if_unused: bool,
+    ) -> Result<()> {
         let mut q = Vec::new();
         if if_empty {
             q.push(("if-empty".to_string(), "true".to_string()));
@@ -674,13 +738,16 @@ impl ManagementClient {
         if if_unused {
             q.push(("if-unused".to_string(), "true".to_string()));
         }
-        self.delete(&format!("queues/{}/{}", v(vhost), pct(name)), &q).await
+        self.delete(&format!("queues/{}/{}", v(vhost), pct(name)), &q)
+            .await
     }
     pub async fn purge_queue(&self, vhost: &str, name: &str) -> Result<()> {
-        self.delete(&format!("queues/{}/{}/contents", v(vhost), pct(name)), &[]).await
+        self.delete(&format!("queues/{}/{}/contents", v(vhost), pct(name)), &[])
+            .await
     }
     pub async fn queue_bindings(&self, vhost: &str, name: &str) -> Result<Vec<BindingInfo>> {
-        self.get(&format!("queues/{}/{}/bindings", v(vhost), pct(name))).await
+        self.get(&format!("queues/{}/{}/bindings", v(vhost), pct(name)))
+            .await
     }
 
     // ---------------------------------------------------------------- exchanges
@@ -693,14 +760,21 @@ impl ManagementClient {
         self.list::<ExchangeInfo>(&path, q).await
     }
     pub async fn exchange(&self, vhost: &str, name: &str) -> Result<ExchangeInfo> {
-        self.get(&format!("exchanges/{}/{}", v(vhost), pct(name))).await
+        self.get(&format!("exchanges/{}/{}", v(vhost), pct(name)))
+            .await
     }
     pub async fn declare_exchange(&self, vhost: &str, name: &str, body: &Value) -> Result<()> {
-        self.put(&format!("exchanges/{}/{}", v(vhost), pct(name)), body).await
+        self.put(&format!("exchanges/{}/{}", v(vhost), pct(name)), body)
+            .await
     }
     pub async fn delete_exchange(&self, vhost: &str, name: &str, if_unused: bool) -> Result<()> {
-        let q = if if_unused { vec![("if-unused".to_string(), "true".to_string())] } else { vec![] };
-        self.delete(&format!("exchanges/{}/{}", v(vhost), pct(name)), &q).await
+        let q = if if_unused {
+            vec![("if-unused".to_string(), "true".to_string())]
+        } else {
+            vec![]
+        };
+        self.delete(&format!("exchanges/{}/{}", v(vhost), pct(name)), &q)
+            .await
     }
 
     // ---------------------------------------------------------------- bindings
@@ -712,10 +786,24 @@ impl ManagementClient {
         }
     }
     pub async fn bindings_from(&self, vhost: &str, exchange: &str) -> Result<Vec<BindingInfo>> {
-        self.get(&format!("exchanges/{}/{}/bindings/source", v(vhost), pct(exchange))).await
+        self.get(&format!(
+            "exchanges/{}/{}/bindings/source",
+            v(vhost),
+            pct(exchange)
+        ))
+        .await
     }
-    pub async fn bindings_to_exchange(&self, vhost: &str, exchange: &str) -> Result<Vec<BindingInfo>> {
-        self.get(&format!("exchanges/{}/{}/bindings/destination", v(vhost), pct(exchange))).await
+    pub async fn bindings_to_exchange(
+        &self,
+        vhost: &str,
+        exchange: &str,
+    ) -> Result<Vec<BindingInfo>> {
+        self.get(&format!(
+            "exchanges/{}/{}/bindings/destination",
+            v(vhost),
+            pct(exchange)
+        ))
+        .await
     }
     pub async fn create_binding(
         &self,
@@ -726,9 +814,19 @@ impl ManagementClient {
         routing_key: &str,
         arguments: &Map<String, Value>,
     ) -> Result<()> {
-        let d = if destination_type == "exchange" { "e" } else { "q" };
+        let d = if destination_type == "exchange" {
+            "e"
+        } else {
+            "q"
+        };
         self.post(
-            &format!("bindings/{}/e/{}/{}/{}", v(vhost), pct(source), d, pct(destination)),
+            &format!(
+                "bindings/{}/e/{}/{}/{}",
+                v(vhost),
+                pct(source),
+                d,
+                pct(destination)
+            ),
             &json!({ "routing_key": routing_key, "arguments": arguments }),
         )
         .await
@@ -742,9 +840,20 @@ impl ManagementClient {
         destination: &str,
         properties_key: &str,
     ) -> Result<()> {
-        let d = if destination_type == "exchange" { "e" } else { "q" };
+        let d = if destination_type == "exchange" {
+            "e"
+        } else {
+            "q"
+        };
         self.delete(
-            &format!("bindings/{}/e/{}/{}/{}/{}", v(vhost), pct(source), d, pct(destination), pct(properties_key)),
+            &format!(
+                "bindings/{}/e/{}/{}/{}/{}",
+                v(vhost),
+                pct(source),
+                d,
+                pct(destination),
+                pct(properties_key)
+            ),
             &[],
         )
         .await
@@ -752,7 +861,10 @@ impl ManagementClient {
 
     /// Build a [`Topology`] snapshot for routing simulation and graphing.
     pub async fn topology(&self, vhost: &str) -> Result<Topology> {
-        let q = ListQuery { disable_stats: true, ..Default::default() };
+        let q = ListQuery {
+            disable_stats: true,
+            ..Default::default()
+        };
         let ex: Vec<ExchangeInfo> = serde_json::from_value(self.exchanges(Some(vhost), &q).await?)
             .map_err(|e| CoreError::new(ErrorCode::ManagementApi, e.to_string()))?;
         let qs: Vec<QueueInfo> = serde_json::from_value(self.queues(Some(vhost), &q).await?)
@@ -818,7 +930,8 @@ impl ManagementClient {
         self.list::<ChannelInfo>("channels", q).await
     }
     pub async fn connection_channels(&self, name: &str) -> Result<Vec<ChannelInfo>> {
-        self.get(&format!("connections/{}/channels", pct(name))).await
+        self.get(&format!("connections/{}/channels", pct(name)))
+            .await
     }
     pub async fn consumers(&self, vhost: Option<&str>) -> Result<Vec<ConsumerInfo>> {
         match vhost {
@@ -853,7 +966,14 @@ impl ManagementClient {
     pub async fn user_permissions(&self, user: &str) -> Result<Vec<Permission>> {
         self.get(&format!("users/{}/permissions", pct(user))).await
     }
-    pub async fn set_permissions(&self, vhost: &str, user: &str, configure: &str, write: &str, read: &str) -> Result<()> {
+    pub async fn set_permissions(
+        &self,
+        vhost: &str,
+        user: &str,
+        configure: &str,
+        write: &str,
+        read: &str,
+    ) -> Result<()> {
         self.put(
             &format!("permissions/{}/{}", v(vhost), pct(user)),
             &json!({ "configure": configure, "write": write, "read": read }),
@@ -861,12 +981,20 @@ impl ManagementClient {
         .await
     }
     pub async fn clear_permissions(&self, vhost: &str, user: &str) -> Result<()> {
-        self.delete(&format!("permissions/{}/{}", v(vhost), pct(user)), &[]).await
+        self.delete(&format!("permissions/{}/{}", v(vhost), pct(user)), &[])
+            .await
     }
     pub async fn topic_permissions(&self) -> Result<Vec<TopicPermission>> {
         self.get("topic-permissions").await
     }
-    pub async fn set_topic_permissions(&self, vhost: &str, user: &str, exchange: &str, write: &str, read: &str) -> Result<()> {
+    pub async fn set_topic_permissions(
+        &self,
+        vhost: &str,
+        user: &str,
+        exchange: &str,
+        write: &str,
+        read: &str,
+    ) -> Result<()> {
         self.put(
             &format!("topic-permissions/{}/{}", v(vhost), pct(user)),
             &json!({ "exchange": exchange, "write": write, "read": read }),
@@ -874,7 +1002,11 @@ impl ManagementClient {
         .await
     }
     pub async fn clear_topic_permissions(&self, vhost: &str, user: &str) -> Result<()> {
-        self.delete(&format!("topic-permissions/{}/{}", v(vhost), pct(user)), &[]).await
+        self.delete(
+            &format!("topic-permissions/{}/{}", v(vhost), pct(user)),
+            &[],
+        )
+        .await
     }
 
     // ---------------------------------------------------------------- policies, parameters, limits
@@ -893,7 +1025,8 @@ impl ManagementClient {
         .await
     }
     pub async fn delete_policy(&self, vhost: &str, name: &str) -> Result<()> {
-        self.delete(&format!("policies/{}/{}", v(vhost), pct(name)), &[]).await
+        self.delete(&format!("policies/{}/{}", v(vhost), pct(name)), &[])
+            .await
     }
     pub async fn operator_policies(&self, vhost: Option<&str>) -> Result<Vec<Policy>> {
         match vhost {
@@ -909,7 +1042,11 @@ impl ManagementClient {
         .await
     }
     pub async fn delete_operator_policy(&self, vhost: &str, name: &str) -> Result<()> {
-        self.delete(&format!("operator-policies/{}/{}", v(vhost), pct(name)), &[]).await
+        self.delete(
+            &format!("operator-policies/{}/{}", v(vhost), pct(name)),
+            &[],
+        )
+        .await
     }
     pub async fn parameters(&self, component: Option<&str>) -> Result<Value> {
         match component {
@@ -927,10 +1064,15 @@ impl ManagementClient {
         }
     }
     pub async fn set_vhost_limit(&self, vhost: &str, limit: &str, value: i64) -> Result<()> {
-        self.put(&format!("vhost-limits/{}/{}", v(vhost), pct(limit)), &json!({ "value": value })).await
+        self.put(
+            &format!("vhost-limits/{}/{}", v(vhost), pct(limit)),
+            &json!({ "value": value }),
+        )
+        .await
     }
     pub async fn clear_vhost_limit(&self, vhost: &str, limit: &str) -> Result<()> {
-        self.delete(&format!("vhost-limits/{}/{}", v(vhost), pct(limit)), &[]).await
+        self.delete(&format!("vhost-limits/{}/{}", v(vhost), pct(limit)), &[])
+            .await
     }
     pub async fn user_limits(&self) -> Result<Value> {
         self.get("user-limits").await
@@ -987,7 +1129,10 @@ pub fn topology_from_definitions(defs: &Value, vhost: Option<&str>) -> Topology 
             .filter(keep)
             .filter_map(|mut q| {
                 if q.get("type").is_none() {
-                    let t = q["arguments"]["x-queue-type"].as_str().unwrap_or("classic").to_string();
+                    let t = q["arguments"]["x-queue-type"]
+                        .as_str()
+                        .unwrap_or("classic")
+                        .to_string();
                     q["type"] = Value::String(t);
                 }
                 serde_json::from_value(q).ok()
@@ -1036,8 +1181,12 @@ mod tests {
 
     #[test]
     fn user_password_hash_not_serialized() {
-        let u: UserInfo = serde_json::from_value(json!({"name": "a", "tags": [], "password_hash": "h"})).unwrap();
-        assert!(serde_json::to_value(&u).unwrap().get("password_hash").is_none());
+        let u: UserInfo =
+            serde_json::from_value(json!({"name": "a", "tags": [], "password_hash": "h"})).unwrap();
+        assert!(serde_json::to_value(&u)
+            .unwrap()
+            .get("password_hash")
+            .is_none());
     }
 
     #[test]
@@ -1058,6 +1207,9 @@ mod tests {
     fn missing_management_url() {
         let mut p = Profile::local("x");
         p.management_url = None;
-        assert_eq!(ManagementClient::from_profile(&p).unwrap_err().code, ErrorCode::Unsupported);
+        assert_eq!(
+            ManagementClient::from_profile(&p).unwrap_err().code,
+            ErrorCode::Unsupported
+        );
     }
 }

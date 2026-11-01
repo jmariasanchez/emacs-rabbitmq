@@ -24,7 +24,9 @@ const SECRET_KEYS: &[&str] = &[
 
 pub fn is_secret_key(key: &str) -> bool {
     let k = key.to_ascii_lowercase();
-    SECRET_KEYS.iter().any(|s| k == *s || k.ends_with(&format!("_{s}")))
+    SECRET_KEYS
+        .iter()
+        .any(|s| k == *s || k.ends_with(&format!("_{s}")))
 }
 
 /// Mask `user:password@` userinfo inside any URI-looking substring, plus

@@ -282,17 +282,26 @@ impl Session {
                 .await
                 .map_err(|e| map(&e, "connect"))
             } else {
-                Connection::connect(&uri, props).await.map_err(|e| map(&e, "connect"))
+                Connection::connect(&uri, props)
+                    .await
+                    .map_err(|e| map(&e, "connect"))
             }
         };
         tokio::time::timeout(Duration::from_millis(p.limits.timeout_ms), fut)
             .await
             .map_err(|_| {
-                CoreError::new(ErrorCode::Timeout, format!("connect to {} timed out", p.display_uri())).retryable(true)
+                CoreError::new(
+                    ErrorCode::Timeout,
+                    format!("connect to {} timed out", p.display_uri()),
+                )
+                .retryable(true)
             })?
     }
 
-    fn install_connection(self: &Arc<Self>, conn: Connection) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>> {
+    fn install_connection(
+        self: &Arc<Self>,
+        conn: Connection,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>> {
         Box::pin(self.install_connection_inner(conn))
     }
 
@@ -344,14 +353,22 @@ impl Session {
                         // caused them and by per-channel invalidation.
                         let conn_dead = {
                             let g = s.inner.read().await;
-                            g.conn.as_ref().map(|c| {
-                                let st = c.status();
-                                st.errored() || st.closed() || st.closing()
-                            }).unwrap_or(true)
+                            g.conn
+                                .as_ref()
+                                .map(|c| {
+                                    let st = c.status();
+                                    st.errored() || st.closed() || st.closing()
+                                })
+                                .unwrap_or(true)
                         };
                         let err = map(&e, "connection");
                         if !conn_dead {
-                            events::log(&*s.sink, "warning", "amqp091", format!("channel error: {}", err.message));
+                            events::log(
+                                &*s.sink,
+                                "warning",
+                                "amqp091",
+                                format!("channel error: {}", err.message),
+                            );
                             continue;
                         }
                         s.on_connection_lost(epoch, err).await;
@@ -381,7 +398,11 @@ impl Session {
                 c.info.state = "lost".into();
                 c.task.abort();
             }
-            g.state = if closing { SessionState::Closed } else { SessionState::Reconnecting };
+            g.state = if closing {
+                SessionState::Closed
+            } else {
+                SessionState::Reconnecting
+            };
             g.profile.reconnect_attempts
         };
         if closing {
@@ -414,7 +435,10 @@ impl Session {
                 return;
             }
             tokio::time::sleep(delay).await;
-            self.emit_state("reconnecting", json!({ "attempt": attempt, "of": attempts }));
+            self.emit_state(
+                "reconnecting",
+                json!({ "attempt": attempt, "of": attempts }),
+            );
             match Self::open_connection(&profile).await {
                 Ok(conn) => {
                     self.inner.write().await.reconnects += 1;
@@ -431,7 +455,15 @@ impl Session {
                         .map(|(k, _)| k.clone())
                         .collect();
                     if !lost.is_empty() {
-                        events::log(&*self.sink, "info", "amqp091", format!("reconnected; {} consumer(s) need to be restarted explicitly", lost.len()));
+                        events::log(
+                            &*self.sink,
+                            "info",
+                            "amqp091",
+                            format!(
+                                "reconnected; {} consumer(s) need to be restarted explicitly",
+                                lost.len()
+                            ),
+                        );
                     }
                     return;
                 }
@@ -447,7 +479,11 @@ impl Session {
 
     async fn invalidate_epoch(&self, epoch: u64) -> usize {
         let mut un = self.unsettled.lock().await;
-        let ids: Vec<String> = un.iter().filter(|(_, u)| u.epoch == epoch).map(|(k, _)| k.clone()).collect();
+        let ids: Vec<String> = un
+            .iter()
+            .filter(|(_, u)| u.epoch == epoch)
+            .map(|(k, _)| k.clone())
+            .collect();
         let mut stale = self.stale.lock().await;
         for id in &ids {
             un.remove(id);
@@ -492,7 +528,10 @@ impl Session {
                 "session is reconnecting; retry when it is connected",
             )
             .retryable(true)),
-            _ => Err(CoreError::new(ErrorCode::ConnectionFailed, "session is not connected")),
+            _ => Err(CoreError::new(
+                ErrorCode::ConnectionFailed,
+                "session is not connected",
+            )),
         }
     }
 
@@ -511,7 +550,10 @@ impl Session {
             }
         }
         let conn = self.conn().await?;
-        let ch = conn.create_channel().await.map_err(|e| map(&e, "channel.open"))?;
+        let ch = conn
+            .create_channel()
+            .await
+            .map_err(|e| map(&e, "channel.open"))?;
         if slot == Slot::Publish {
             // Returned (unroutable mandatory) messages arrive through the
             // PublisherConfirm of the publish that caused them
@@ -528,9 +570,19 @@ impl Session {
         drop(g);
         if let Some(old) = old {
             // A replaced get-channel takes its unsettled deliveries with it.
-            let n = self.invalidate_channel(self.epoch.load(Ordering::SeqCst), old.id()).await;
+            let n = self
+                .invalidate_channel(self.epoch.load(Ordering::SeqCst), old.id())
+                .await;
             if n > 0 {
-                events::log(&*self.sink, "warning", "amqp091", format!("channel {} closed; {n} unsettled deliveries invalidated", old.id()));
+                events::log(
+                    &*self.sink,
+                    "warning",
+                    "amqp091",
+                    format!(
+                        "channel {} closed; {n} unsettled deliveries invalidated",
+                        old.id()
+                    ),
+                );
             }
         }
         Ok(ch)
@@ -545,7 +597,10 @@ impl Session {
         Fut: std::future::Future<Output = Result<T>>,
     {
         let conn = self.conn().await?;
-        let ch = conn.create_channel().await.map_err(|e| map(&e, "channel.open"))?;
+        let ch = conn
+            .create_channel()
+            .await
+            .map_err(|e| map(&e, "channel.open"))?;
         let r = f(ch.clone()).await;
         if ch.status().connected() {
             let _ = ch.close(200, "OK".into()).await;
@@ -629,9 +684,15 @@ impl Session {
     pub async fn delete_exchange(&self, name: &str, if_unused: bool) -> Result<()> {
         let name = ss(name)?;
         self.with_scratch(|ch| async move {
-            ch.exchange_delete(name, ExchangeDeleteOptions { if_unused, nowait: false })
-                .await
-                .map_err(|e| map(&e, "exchange.delete"))
+            ch.exchange_delete(
+                name,
+                ExchangeDeleteOptions {
+                    if_unused,
+                    nowait: false,
+                },
+            )
+            .await
+            .map_err(|e| map(&e, "exchange.delete"))
         })
         .await
     }
@@ -639,7 +700,11 @@ impl Session {
     pub async fn declare_queue(&self, spec: QueueSpec, passive: bool) -> Result<QueueDeclareOk> {
         let warnings = spec.warnings();
         let spec = if passive { spec } else { spec.validate()? };
-        let args = if passive { FieldTable::default() } else { json_to_table(&spec.arguments)? };
+        let args = if passive {
+            FieldTable::default()
+        } else {
+            json_to_table(&spec.arguments)?
+        };
         let opts = QueueDeclareOptions {
             passive,
             durable: spec.durable,
@@ -668,9 +733,16 @@ impl Session {
     pub async fn delete_queue(&self, name: &str, if_unused: bool, if_empty: bool) -> Result<u32> {
         let name = ss(name)?;
         self.with_scratch(|ch| async move {
-            ch.queue_delete(name, QueueDeleteOptions { if_unused, if_empty, nowait: false })
-                .await
-                .map_err(|e| map(&e, "queue.delete"))
+            ch.queue_delete(
+                name,
+                QueueDeleteOptions {
+                    if_unused,
+                    if_empty,
+                    nowait: false,
+                },
+            )
+            .await
+            .map_err(|e| map(&e, "queue.delete"))
         })
         .await
     }
@@ -700,10 +772,19 @@ impl Session {
         let is_queue = destination_type == "queue";
         self.with_scratch(|ch| async move {
             let r = match (is_queue, unbind) {
-                (true, false) => ch.queue_bind(d, s, k, QueueBindOptions::default(), args).await,
+                (true, false) => {
+                    ch.queue_bind(d, s, k, QueueBindOptions::default(), args)
+                        .await
+                }
                 (true, true) => ch.queue_unbind(d, s, k, args).await,
-                (false, false) => ch.exchange_bind(d, s, k, ExchangeBindOptions::default(), args).await,
-                (false, true) => ch.exchange_unbind(d, s, k, ExchangeUnbindOptions::default(), args).await,
+                (false, false) => {
+                    ch.exchange_bind(d, s, k, ExchangeBindOptions::default(), args)
+                        .await
+                }
+                (false, true) => {
+                    ch.exchange_unbind(d, s, k, ExchangeUnbindOptions::default(), args)
+                        .await
+                }
             };
             r.map_err(|e| map(&e, what))
         })
@@ -714,18 +795,33 @@ impl Session {
 
     /// Publish a batch. Every message gets an outcome; the call itself only
     /// fails for errors that happen before anything was sent.
-    pub async fn publish(&self, messages: &[OutboundMessage], mode: PublishMode, timeout: Duration) -> Result<Vec<PublishOutcome>> {
+    pub async fn publish(
+        &self,
+        messages: &[OutboundMessage],
+        mode: PublishMode,
+        timeout: Duration,
+    ) -> Result<Vec<PublishOutcome>> {
         let limits = self.inner.read().await.profile.limits;
         if messages.len() > limits.max_publish_batch {
             return Err(CoreError::new(
                 ErrorCode::LimitExceeded,
-                format!("batch of {} exceeds max_publish_batch={}", messages.len(), limits.max_publish_batch),
+                format!(
+                    "batch of {} exceeds max_publish_batch={}",
+                    messages.len(),
+                    limits.max_publish_batch
+                ),
             ));
         }
         // Validate everything before sending anything.
         let mut prepared = Vec::with_capacity(messages.len());
         for m in messages {
-            prepared.push((ss(&m.exchange)?, ss(&m.routing_key)?, m.payload.to_bytes()?, to_basic_properties(&m.properties)?, m.mandatory));
+            prepared.push((
+                ss(&m.exchange)?,
+                ss(&m.routing_key)?,
+                m.payload.to_bytes()?,
+                to_basic_properties(&m.properties)?,
+                m.mandatory,
+            ));
         }
         match mode {
             PublishMode::Confirm => self.publish_confirm(prepared, timeout).await,
@@ -734,19 +830,42 @@ impl Session {
         }
     }
 
-    async fn publish_confirm(&self, prepared: Vec<Prepared>, timeout: Duration) -> Result<Vec<PublishOutcome>> {
+    async fn publish_confirm(
+        &self,
+        prepared: Vec<Prepared>,
+        timeout: Duration,
+    ) -> Result<Vec<PublishOutcome>> {
         let ch = self.channel(Slot::Publish).await?;
         let mut pending = Vec::with_capacity(prepared.len());
         let mut outcomes: Vec<Option<PublishOutcome>> = vec![None; prepared.len()];
         for (i, (ex, rk, body, props, mandatory)) in prepared.into_iter().enumerate() {
             match ch
-                .basic_publish(ex, rk, BasicPublishOptions { mandatory, immediate: false }, &body, props)
+                .basic_publish(
+                    ex,
+                    rk,
+                    BasicPublishOptions {
+                        mandatory,
+                        immediate: false,
+                    },
+                    &body,
+                    props,
+                )
                 .await
             {
                 Ok(confirm) => pending.push((i, confirm)),
                 Err(e) => {
-                    let status = if errors::is_pre_send(&e) { PublishStatus::Failed } else { PublishStatus::Uncertain };
-                    outcomes[i] = Some(outcome(i, status, None, None, Some(map(&e, "basic.publish").message)));
+                    let status = if errors::is_pre_send(&e) {
+                        PublishStatus::Failed
+                    } else {
+                        PublishStatus::Uncertain
+                    };
+                    outcomes[i] = Some(outcome(
+                        i,
+                        status,
+                        None,
+                        None,
+                        Some(map(&e, "basic.publish").message),
+                    ));
                 }
             }
         }
@@ -754,26 +873,55 @@ impl Session {
         for (i, confirm) in pending {
             let r = tokio::time::timeout_at(deadline, confirm).await;
             outcomes[i] = Some(match r {
-                Err(_) => outcome(i, PublishStatus::Uncertain, None, None, Some("no confirm before timeout".into())),
-                Ok(Err(e)) => outcome(i, PublishStatus::Uncertain, None, None, Some(map(&e, "confirm").message)),
-                Ok(Ok(Confirmation::Ack(None))) => outcome(i, PublishStatus::Confirmed, None, None, None),
+                Err(_) => outcome(
+                    i,
+                    PublishStatus::Uncertain,
+                    None,
+                    None,
+                    Some("no confirm before timeout".into()),
+                ),
+                Ok(Err(e)) => outcome(
+                    i,
+                    PublishStatus::Uncertain,
+                    None,
+                    None,
+                    Some(map(&e, "confirm").message),
+                ),
+                Ok(Ok(Confirmation::Ack(None))) => {
+                    outcome(i, PublishStatus::Confirmed, None, None, None)
+                }
                 Ok(Ok(Confirmation::Ack(Some(ret)))) => self.returned(i, ret),
                 Ok(Ok(Confirmation::Nack(ret))) => {
-                    let mut o = outcome(i, PublishStatus::Nacked, None, None, Some("broker nacked the message".into()));
+                    let mut o = outcome(
+                        i,
+                        PublishStatus::Nacked,
+                        None,
+                        None,
+                        Some("broker nacked the message".into()),
+                    );
                     if let Some(r) = ret {
                         o.reply_code = Some(r.reply_code);
                         o.reply_text = Some(r.reply_text.as_str().to_string());
                     }
                     o
                 }
-                Ok(Ok(Confirmation::NotRequested)) => outcome(i, PublishStatus::Unconfirmed, None, None, None),
+                Ok(Ok(Confirmation::NotRequested)) => {
+                    outcome(i, PublishStatus::Unconfirmed, None, None, None)
+                }
             });
         }
-        Ok(outcomes.into_iter().map(|o| o.expect("every index has an outcome")).collect())
+        Ok(outcomes
+            .into_iter()
+            .map(|o| o.expect("every index has an outcome"))
+            .collect())
     }
 
     fn returned(&self, i: usize, ret: BasicReturnMessage) -> PublishOutcome {
-        let id = self.inner.try_read().map(|g| g.id.clone()).unwrap_or_default();
+        let id = self
+            .inner
+            .try_read()
+            .map(|g| g.id.clone())
+            .unwrap_or_default();
         self.sink.emit(
             names::RETURNED,
             json!({
@@ -797,15 +945,37 @@ impl Session {
     async fn publish_noconfirm(&self, prepared: Vec<Prepared>) -> Result<Vec<PublishOutcome>> {
         // Separate non-confirm channel so confirm sequencing is unaffected.
         let conn = self.conn().await?;
-        let ch = conn.create_channel().await.map_err(|e| map(&e, "channel.open"))?;
+        let ch = conn
+            .create_channel()
+            .await
+            .map_err(|e| map(&e, "channel.open"))?;
         let mut out = Vec::new();
         for (i, (ex, rk, body, props, mandatory)) in prepared.into_iter().enumerate() {
             let r = ch
-                .basic_publish(ex, rk, BasicPublishOptions { mandatory, immediate: false }, &body, props)
+                .basic_publish(
+                    ex,
+                    rk,
+                    BasicPublishOptions {
+                        mandatory,
+                        immediate: false,
+                    },
+                    &body,
+                    props,
+                )
                 .await;
             out.push(match r {
                 Ok(_) => outcome(i, PublishStatus::Unconfirmed, None, None, None),
-                Err(e) => outcome(i, if errors::is_pre_send(&e) { PublishStatus::Failed } else { PublishStatus::Uncertain }, None, None, Some(map(&e, "basic.publish").message)),
+                Err(e) => outcome(
+                    i,
+                    if errors::is_pre_send(&e) {
+                        PublishStatus::Failed
+                    } else {
+                        PublishStatus::Uncertain
+                    },
+                    None,
+                    None,
+                    Some(map(&e, "basic.publish").message),
+                ),
             });
         }
         let _ = ch.close(200, "OK".into()).await;
@@ -815,26 +985,52 @@ impl Session {
     async fn publish_tx(&self, prepared: Vec<Prepared>) -> Result<Vec<PublishOutcome>> {
         let n = prepared.len();
         let conn = self.conn().await?;
-        let ch = conn.create_channel().await.map_err(|e| map(&e, "channel.open"))?;
+        let ch = conn
+            .create_channel()
+            .await
+            .map_err(|e| map(&e, "channel.open"))?;
         ch.tx_select().await.map_err(|e| map(&e, "tx.select"))?;
         for (ex, rk, body, props, mandatory) in prepared {
             if let Err(e) = ch
-                .basic_publish(ex, rk, BasicPublishOptions { mandatory, immediate: false }, &body, props)
+                .basic_publish(
+                    ex,
+                    rk,
+                    BasicPublishOptions {
+                        mandatory,
+                        immediate: false,
+                    },
+                    &body,
+                    props,
+                )
                 .await
             {
                 let _ = ch.tx_rollback().await;
                 let err = map(&e, "basic.publish");
-                return Ok((0..n).map(|i| outcome(i, PublishStatus::Failed, None, None, Some(format!("transaction rolled back: {}", err.message)))).collect());
+                return Ok((0..n)
+                    .map(|i| {
+                        outcome(
+                            i,
+                            PublishStatus::Failed,
+                            None,
+                            None,
+                            Some(format!("transaction rolled back: {}", err.message)),
+                        )
+                    })
+                    .collect());
             }
         }
         let r = ch.tx_commit().await;
         let _ = ch.close(200, "OK".into()).await;
         Ok(match r {
-            Ok(()) => (0..n).map(|i| outcome(i, PublishStatus::Committed, None, None, None)).collect(),
+            Ok(()) => (0..n)
+                .map(|i| outcome(i, PublishStatus::Committed, None, None, None))
+                .collect(),
             // A failed commit after the frame was written is ambiguous.
             Err(e) => {
                 let msg = map(&e, "tx.commit").message;
-                (0..n).map(|i| outcome(i, PublishStatus::Uncertain, None, None, Some(msg.clone()))).collect()
+                (0..n)
+                    .map(|i| outcome(i, PublishStatus::Uncertain, None, None, Some(msg.clone())))
+                    .collect()
             }
         })
     }
@@ -847,14 +1043,20 @@ impl Session {
     pub async fn get(&self, queue: &str, count: usize, auto_ack: bool) -> Result<GetResult> {
         let limits = self.inner.read().await.profile.limits;
         if count == 0 || count > limits.max_pull {
-            return Err(CoreError::invalid(format!("count must be between 1 and {}", limits.max_pull)));
+            return Err(CoreError::invalid(format!(
+                "count must be between 1 and {}",
+                limits.max_pull
+            )));
         }
         if !auto_ack {
             let un = self.unsettled.lock().await.len();
             if un + count > limits.max_unsettled {
                 return Err(CoreError::new(
                     ErrorCode::LimitExceeded,
-                    format!("{un} deliveries are already unsettled (limit {}); settle some first", limits.max_unsettled),
+                    format!(
+                        "{un} deliveries are already unsettled (limit {}); settle some first",
+                        limits.max_unsettled
+                    ),
                 ));
             }
         }
@@ -864,12 +1066,24 @@ impl Session {
         let mut remaining = None;
         let q = ss(queue)?;
         for _ in 0..count {
-            match ch.basic_get(q.clone(), BasicGetOptions { no_ack: auto_ack }).await {
+            match ch
+                .basic_get(q.clone(), BasicGetOptions { no_ack: auto_ack })
+                .await
+            {
                 Ok(Some(msg)) => {
                     remaining = Some(msg.message_count);
                     let mc = msg.message_count;
                     let m = self
-                        .register(msg.delivery, ch.id(), queue, None, epoch, auto_ack, limits.max_payload_preview, Some(mc))
+                        .register(
+                            msg.delivery,
+                            ch.id(),
+                            queue,
+                            None,
+                            epoch,
+                            auto_ack,
+                            limits.max_payload_preview,
+                            Some(mc),
+                        )
                         .await;
                     out.push(m);
                 }
@@ -883,7 +1097,16 @@ impl Session {
                         return Err(err);
                     }
                     // Partial success must be reported, not hidden behind an error.
-                    events::log(&*self.sink, "error", "amqp091", format!("basic.get stopped after {} message(s): {}", out.len(), err.message));
+                    events::log(
+                        &*self.sink,
+                        "error",
+                        "amqp091",
+                        format!(
+                            "basic.get stopped after {} message(s): {}",
+                            out.len(),
+                            err.message
+                        ),
+                    );
                     break;
                 }
             }
@@ -936,7 +1159,13 @@ impl Session {
         if !auto_ack {
             self.unsettled.lock().await.insert(
                 id,
-                Unsettled { acker: d.acker, epoch, channel, delivery_tag: d.delivery_tag, queue: queue.to_string() },
+                Unsettled {
+                    acker: d.acker,
+                    epoch,
+                    channel,
+                    delivery_tag: d.delivery_tag,
+                    queue: queue.to_string(),
+                },
             );
         }
         m
@@ -946,7 +1175,12 @@ impl Session {
 
     /// Settle a delivery by bridge id. Uses the original channel's acker; fails
     /// with `stale_delivery` if that channel or connection is gone.
-    pub async fn settle(&self, id: &str, how: Settlement, multiple: bool) -> Result<Vec<SettleResult>> {
+    pub async fn settle(
+        &self,
+        id: &str,
+        how: Settlement,
+        multiple: bool,
+    ) -> Result<Vec<SettleResult>> {
         let targets: Vec<(String, Unsettled)> = {
             let mut un = self.unsettled.lock().await;
             let Some(first) = un.get(id) else {
@@ -957,7 +1191,9 @@ impl Session {
                         format!("delivery {id} belongs to a channel or connection that has closed; the broker will redeliver it"),
                     )
                 } else {
-                    CoreError::not_found(format!("no unsettled delivery {id} (already settled, auto-acked, or unknown)"))
+                    CoreError::not_found(format!(
+                        "no unsettled delivery {id} (already settled, auto-acked, or unknown)"
+                    ))
                 });
             };
             if !first.acker.usable() {
@@ -965,19 +1201,26 @@ impl Session {
                 self.stale.lock().await.push(id.to_string());
                 return Err(CoreError::new(
                     ErrorCode::StaleDelivery,
-                    format!("delivery {id} can no longer be settled: channel {} closed", u.channel),
+                    format!(
+                        "delivery {id} can no longer be settled: channel {} closed",
+                        u.channel
+                    ),
                 ));
             }
             let (epoch, channel, tag) = (first.epoch, first.channel, first.delivery_tag);
             let keys: Vec<String> = if multiple {
                 un.iter()
-                    .filter(|(_, u)| u.epoch == epoch && u.channel == channel && u.delivery_tag <= tag)
+                    .filter(|(_, u)| {
+                        u.epoch == epoch && u.channel == channel && u.delivery_tag <= tag
+                    })
                     .map(|(k, _)| k.clone())
                     .collect()
             } else {
                 vec![id.to_string()]
             };
-            keys.into_iter().filter_map(|k| un.remove(&k).map(|u| (k, u))).collect()
+            keys.into_iter()
+                .filter_map(|k| un.remove(&k).map(|u| (k, u)))
+                .collect()
         };
         // Settle individually through each Acker: lapin's `multiple` acks are
         // tied to a single acker, and per-delivery settlement keeps the
@@ -986,25 +1229,53 @@ impl Session {
         for (k, u) in targets {
             let r = match how {
                 Settlement::Ack => u.acker.ack(BasicAckOptions { multiple: false }).await,
-                Settlement::Nack { requeue } => u.acker.nack(BasicNackOptions { multiple: false, requeue }).await,
-                Settlement::Reject { requeue } => u.acker.reject(BasicRejectOptions { requeue }).await,
+                Settlement::Nack { requeue } => {
+                    u.acker
+                        .nack(BasicNackOptions {
+                            multiple: false,
+                            requeue,
+                        })
+                        .await
+                }
+                Settlement::Reject { requeue } => {
+                    u.acker.reject(BasicRejectOptions { requeue }).await
+                }
                 other => {
                     // put back; AMQP 0-9-1 has no release/modify outcome.
                     self.unsettled.lock().await.insert(k.clone(), u);
-                    return Err(CoreError::unsupported(format!("{other:?} is an AMQP 1.0 outcome; use ack, nack, or reject")));
+                    return Err(CoreError::unsupported(format!(
+                        "{other:?} is an AMQP 1.0 outcome; use ack, nack, or reject"
+                    )));
                 }
             };
             match r {
-                Ok(true) => results.push(SettleResult { id: k, settled: true, outcome: how }),
+                Ok(true) => results.push(SettleResult {
+                    id: k,
+                    settled: true,
+                    outcome: how,
+                }),
                 Ok(false) => {
                     self.stale.lock().await.push(k.clone());
-                    results.push(SettleResult { id: k, settled: false, outcome: how });
+                    results.push(SettleResult {
+                        id: k,
+                        settled: false,
+                        outcome: how,
+                    });
                 }
                 Err(e) => {
                     let err = map(&e, "settle");
-                    events::log(&*self.sink, "error", "amqp091", format!("settling {k} on queue {} failed: {}", u.queue, err.message));
+                    events::log(
+                        &*self.sink,
+                        "error",
+                        "amqp091",
+                        format!("settling {k} on queue {} failed: {}", u.queue, err.message),
+                    );
                     self.stale.lock().await.push(k.clone());
-                    results.push(SettleResult { id: k, settled: false, outcome: how });
+                    results.push(SettleResult {
+                        id: k,
+                        settled: false,
+                        outcome: how,
+                    });
                 }
             }
         }
@@ -1023,15 +1294,25 @@ impl Session {
         let limits = self.inner.read().await.profile.limits;
         {
             let g = self.inner.read().await;
-            let active = g.consumers.values().filter(|c| c.info.state == "active").count();
+            let active = g
+                .consumers
+                .values()
+                .filter(|c| c.info.state == "active")
+                .count();
             if active >= limits.max_consumers {
-                return Err(CoreError::new(ErrorCode::LimitExceeded, format!("max_consumers={} reached", limits.max_consumers)));
+                return Err(CoreError::new(
+                    ErrorCode::LimitExceeded,
+                    format!("max_consumers={} reached", limits.max_consumers),
+                ));
             }
         }
         let conn = self.conn().await?;
         // One channel per consumer: cancelling or losing one never invalidates
         // another consumer's delivery tags.
-        let ch = conn.create_channel().await.map_err(|e| map(&e, "channel.open"))?;
+        let ch = conn
+            .create_channel()
+            .await
+            .map_err(|e| map(&e, "channel.open"))?;
         if !o.auto_ack {
             ch.basic_qos(o.prefetch, BasicQosOptions { global: false })
                 .await
@@ -1049,7 +1330,12 @@ impl Session {
             .basic_consume(
                 ss(&o.queue)?,
                 ss(&tag)?,
-                BasicConsumeOptions { no_local: false, no_ack: o.auto_ack, exclusive: o.exclusive, nowait: false },
+                BasicConsumeOptions {
+                    no_local: false,
+                    no_ack: o.auto_ack,
+                    exclusive: o.exclusive,
+                    nowait: false,
+                },
                 json_to_table(&args)?,
             )
             .await
@@ -1067,7 +1353,9 @@ impl Session {
             buffered: 0,
             dropped: 0,
         };
-        let buffer = Arc::new(Mutex::new(BoundedBuffer::new(limits.max_buffered_deliveries)));
+        let buffer = Arc::new(Mutex::new(BoundedBuffer::new(
+            limits.max_buffered_deliveries,
+        )));
         let paused = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let task = tokio::spawn(consumer_loop(
@@ -1084,14 +1372,25 @@ impl Session {
         ));
         self.inner.write().await.consumers.insert(
             tag.clone(),
-            ConsumerHandle { info: info.clone(), channel: ch, task, buffer, paused, cancelled_by_client: cancelled },
+            ConsumerHandle {
+                info: info.clone(),
+                channel: ch,
+                task,
+                buffer,
+                paused,
+                cancelled_by_client: cancelled,
+            },
         );
         self.emit_consumer(&tag, "active", None);
         Ok(info)
     }
 
     fn emit_consumer(&self, tag: &str, state: &str, reason: Option<String>) {
-        let id = self.inner.try_read().map(|g| g.id.clone()).unwrap_or_default();
+        let id = self
+            .inner
+            .try_read()
+            .map(|g| g.id.clone())
+            .unwrap_or_default();
         self.sink.emit(
             names::CONSUMER,
             json!({ "session": id, "consumer": tag, "state": state, "reason": reason, "at": now_millis() }),
@@ -1103,7 +1402,10 @@ impl Session {
     /// messages, so pausing applies natural backpressure in manual-ack mode.
     pub async fn set_paused(&self, tag: &str, paused: bool) -> Result<ConsumerInfo> {
         let g = self.inner.read().await;
-        let c = g.consumers.get(tag).ok_or_else(|| CoreError::not_found(format!("no consumer {tag}")))?;
+        let c = g
+            .consumers
+            .get(tag)
+            .ok_or_else(|| CoreError::not_found(format!("no consumer {tag}")))?;
         c.paused.store(paused, Ordering::SeqCst);
         let mut info = c.info.clone();
         info.paused = paused;
@@ -1118,7 +1420,10 @@ impl Session {
     /// resuming, or to page through a paused consumer).
     pub async fn drain(&self, tag: &str, max: usize) -> Result<(Vec<InboundMessage>, u64)> {
         let g = self.inner.read().await;
-        let c = g.consumers.get(tag).ok_or_else(|| CoreError::not_found(format!("no consumer {tag}")))?;
+        let c = g
+            .consumers
+            .get(tag)
+            .ok_or_else(|| CoreError::not_found(format!("no consumer {tag}")))?;
         let mut b = c.buffer.lock().await;
         Ok((b.drain(max), b.dropped()))
     }
@@ -1126,7 +1431,9 @@ impl Session {
     async fn flush_consumer(&self, tag: &str) {
         let (session, msgs, dropped) = {
             let g = self.inner.read().await;
-            let Some(c) = g.consumers.get(tag) else { return };
+            let Some(c) = g.consumers.get(tag) else {
+                return;
+            };
             let mut b = c.buffer.lock().await;
             (g.id.clone(), b.drain(usize::MAX), b.dropped())
         };
@@ -1139,11 +1446,20 @@ impl Session {
     }
 
     pub async fn cancel(&self, tag: &str) -> Result<ConsumerInfo> {
-        let handle = self.inner.write().await.consumers.remove(tag).ok_or_else(|| CoreError::not_found(format!("no consumer {tag}")))?;
+        let handle = self
+            .inner
+            .write()
+            .await
+            .consumers
+            .remove(tag)
+            .ok_or_else(|| CoreError::not_found(format!("no consumer {tag}")))?;
         handle.cancelled_by_client.store(true, Ordering::SeqCst);
         let mut info = handle.info.clone();
         if handle.channel.status().connected() {
-            let _ = handle.channel.basic_cancel(ss(tag)?, BasicCancelOptions::default()).await;
+            let _ = handle
+                .channel
+                .basic_cancel(ss(tag)?, BasicCancelOptions::default())
+                .await;
         }
         handle.task.abort();
         // Unacked deliveries for this consumer stay settleable while the channel
@@ -1186,14 +1502,22 @@ impl Session {
         let epoch = self.epoch.load(Ordering::SeqCst);
         self.invalidate_epoch(epoch).await;
         if let Some(c) = conn {
-            let _ = tokio::time::timeout(Duration::from_secs(5), c.close(200, "client closed".into())).await;
+            let _ =
+                tokio::time::timeout(Duration::from_secs(5), c.close(200, "client closed".into()))
+                    .await;
         }
         self.emit_state("closed", json!({}));
         Ok(())
     }
 }
 
-type Prepared = (ShortString, ShortString, Vec<u8>, lapin::BasicProperties, bool);
+type Prepared = (
+    ShortString,
+    ShortString,
+    Vec<u8>,
+    lapin::BasicProperties,
+    bool,
+);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Slot {
@@ -1202,11 +1526,24 @@ enum Slot {
 }
 
 fn ss(s: &str) -> Result<ShortString> {
-    ShortString::try_new(s.to_string()).map_err(|_| CoreError::invalid(format!("name \"{s}\" exceeds 255 bytes")))
+    ShortString::try_new(s.to_string())
+        .map_err(|_| CoreError::invalid(format!("name \"{s}\" exceeds 255 bytes")))
 }
 
-fn outcome(i: usize, status: PublishStatus, code: Option<u16>, text: Option<String>, error: Option<String>) -> PublishOutcome {
-    PublishOutcome { index: i, status, reply_code: code, reply_text: text, error }
+fn outcome(
+    i: usize,
+    status: PublishStatus,
+    code: Option<u16>,
+    text: Option<String>,
+    error: Option<String>,
+) -> PublishOutcome {
+    PublishOutcome {
+        index: i,
+        status,
+        reply_code: code,
+        reply_text: text,
+        error,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1282,7 +1619,16 @@ async fn consumer_loop(
                 c.info.state = "cancelled_by_broker".into();
             }
         }
-        s.emit_consumer(&tag, "cancelled_by_broker", Some(format!("{reason}; {n} unsettled deliveries invalidated")));
-        events::log(&*s.sink, "warning", "amqp091", format!("consumer {tag} on {} ended: {reason}", o.queue));
+        s.emit_consumer(
+            &tag,
+            "cancelled_by_broker",
+            Some(format!("{reason}; {n} unsettled deliveries invalidated")),
+        );
+        events::log(
+            &*s.sink,
+            "warning",
+            "amqp091",
+            format!("consumer {tag} on {} ended: {reason}", o.queue),
+        );
     }
 }

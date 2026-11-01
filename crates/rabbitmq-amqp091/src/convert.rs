@@ -14,7 +14,9 @@
 //! Untagged integers become `i64` (`l`) which RabbitMQ accepts everywhere an
 //! integer argument is expected.
 
-use lapin::types::{AMQPValue, ByteArray, DecimalValue, FieldArray, FieldTable, LongString, ShortString};
+use lapin::types::{
+    AMQPValue, ByteArray, DecimalValue, FieldArray, FieldTable, LongString, ShortString,
+};
 use lapin::BasicProperties;
 use rabbitmq_core::error::{CoreError, Result};
 use rabbitmq_core::message::{decode_b64, encode_b64, MessageProperties};
@@ -33,7 +35,9 @@ pub fn amqp_to_json(v: &AMQPValue) -> Value {
         AMQPValue::LongLongInt(n) => json!(n),
         AMQPValue::Float(f) => json!(f),
         AMQPValue::Double(f) => json!(f),
-        AMQPValue::DecimalValue(d) => json!({"$type": "decimal", "scale": d.scale, "value": d.value}),
+        AMQPValue::DecimalValue(d) => {
+            json!({"$type": "decimal", "scale": d.scale, "value": d.value})
+        }
         AMQPValue::ShortString(s) => Value::String(s.as_str().to_string()),
         AMQPValue::LongString(s) => match std::str::from_utf8(s.as_bytes()) {
             Ok(t) => Value::String(t.to_string()),
@@ -63,7 +67,9 @@ pub fn json_to_amqp(v: &Value) -> Result<AMQPValue> {
                 AMQPValue::LongLongInt(i)
             } else if let Some(u) = n.as_u64() {
                 // > i64::MAX: no unsigned 64-bit type in RabbitMQ field tables.
-                return Err(CoreError::invalid(format!("integer {u} does not fit a signed 64-bit field")));
+                return Err(CoreError::invalid(format!(
+                    "integer {u} does not fit a signed 64-bit field"
+                )));
             } else {
                 AMQPValue::Double(n.as_f64().unwrap_or(0.0))
             }
@@ -95,10 +101,9 @@ fn typed(t: &str, m: &Map<String, Value>) -> Result<AMQPValue> {
         }
     };
     Ok(match t {
-        "timestamp" => AMQPValue::Timestamp(
-            val.and_then(Value::as_u64)
-                .ok_or_else(|| CoreError::invalid("timestamp value must be a non-negative integer (seconds)"))?,
-        ),
+        "timestamp" => AMQPValue::Timestamp(val.and_then(Value::as_u64).ok_or_else(|| {
+            CoreError::invalid("timestamp value must be a non-negative integer (seconds)")
+        })?),
         "bytes" => {
             let b = m
                 .get("base64")
@@ -120,7 +125,10 @@ fn typed(t: &str, m: &Map<String, Value>) -> Result<AMQPValue> {
         "f32" => AMQPValue::Float(val.and_then(Value::as_f64).unwrap_or(0.0) as f32),
         "f64" => AMQPValue::Double(val.and_then(Value::as_f64).unwrap_or(0.0)),
         "string" => AMQPValue::LongString(LongString::from(
-            val.and_then(Value::as_str).unwrap_or_default().as_bytes().to_vec(),
+            val.and_then(Value::as_str)
+                .unwrap_or_default()
+                .as_bytes()
+                .to_vec(),
         )),
         other => return Err(CoreError::invalid(format!("unknown $type \"{other}\""))),
     })
@@ -137,7 +145,8 @@ pub fn json_to_table(m: &Map<String, Value>) -> Result<FieldTable> {
 }
 
 fn ss(s: &str, what: &str) -> Result<ShortString> {
-    ShortString::try_new(s.to_string()).map_err(|_| CoreError::invalid(format!("{what} exceeds 255 bytes")))
+    ShortString::try_new(s.to_string())
+        .map_err(|_| CoreError::invalid(format!("{what} exceeds 255 bytes")))
 }
 
 pub fn to_basic_properties(p: &MessageProperties) -> Result<BasicProperties> {
@@ -219,7 +228,10 @@ mod tests {
             "nil": null
         });
         let t = json_to_table(j.as_object().unwrap()).unwrap();
-        assert!(matches!(t.inner().get("small"), Some(AMQPValue::ShortShortUInt(7))));
+        assert!(matches!(
+            t.inner().get("small"),
+            Some(AMQPValue::ShortShortUInt(7))
+        ));
         let back = Value::Object(table_to_json(&t));
         assert_eq!(back["a"], 1);
         assert_eq!(back["ts"]["value"], 1700000000);
