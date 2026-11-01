@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -37,6 +38,8 @@ jobs:
           mkdir -p "dist/$name"
           cp "target/${{ matrix.target }}/release/rabbitmq-bridge" "dist/$name/"
           cp README.md COPYING LICENSE-MIT LICENSE-APACHE "dist/$name/"
+          python3 scripts/third-party-licenses.py ${{ matrix.target }} > "dist/$name/THIRD-PARTY-LICENSES.txt"
+          "dist/$name/rabbitmq-bridge" --version
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           (cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
       - uses: actions/upload-artifact@v4
@@ -49,21 +52,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Package
+      - uses: purcell/setup-emacs@master
+        with:
+          version: "29.1"
+      - name: Package and verify package-install
         run: |
-          name="rabbitmq-el-${GITHUB_REF_NAME}"
-          mkdir -p "dist/$name"
-          cp lisp/*.el README.md COPYING "dist/$name/"
-          tar -C dist -czf "dist/$name.tar.gz" "$name"
-          (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
+          tarball=$(scripts/package-lisp.sh dist | tail -1)
+          (cd dist && sha256sum "$(basename "$tarball")" > "$(basename "$tarball").sha256")
       - uses: actions/upload-artifact@v4
         with:
           name: lisp
-          path: dist/*.tar.gz*
+          path: dist/rabbitmq-*.tar*
 
   publish:
     name: Publish GitHub release
     needs: [build, lisp]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

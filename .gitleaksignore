@@ -1,0 +1,2 @@
+# RabbitMQ default guest:guest on the throwaway CI service container.
+b53fa33476dfe14ec798b931fbe2f31d83becc2f:.github/workflows/ci.yml:curl-auth-user:70

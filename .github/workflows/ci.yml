@@ -74,7 +74,7 @@ jobs:
           BROKER_ID: ${{ job.services.rabbitmq.id }}
         run: |
           docker exec "$BROKER_ID" rabbitmq-plugins enable rabbitmq_stream
-          for attempt in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             if docker exec "$BROKER_ID" rabbitmq-diagnostics -q check_running &&
                curl --fail --silent --user guest:guest http://localhost:15672/api/overview > /dev/null &&
                timeout 2 bash -c 'echo > /dev/tcp/127.0.0.1/5672' &&

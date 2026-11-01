@@ -14,6 +14,17 @@ Protected-resource checks are incomplete, delivery notifications can be lost,
 consumer memory bounds are incomplete, AMQP 1.0 TLS is unsupported, and
 cancellation semantics remain uncertain. See SECURITY.md and TESTING.md.
 
+## Install from a release
+
+[Releases](https://github.com/jmariasanchez/emacs-rabbitmq/releases) are
+experimental pre-releases. Each includes a `rabbitmq-bridge` binary for
+`aarch64-apple-darwin` and `x86_64-unknown-linux-gnu` (with
+`THIRD-PARTY-LICENSES.txt`), a package.el tarball `rabbitmq-VERSION.tar`, and
+SHA-256 checksums. Install the Lisp package with
+`M-x package-install-file RET rabbitmq-VERSION.tar`, then set
+`rabbitmq-bridge-program` to the extracted binary. Use a bridge from the same
+release as the Lisp package.
+
 ## Build and load
 
 The manifests declare Rust 1.85 and edition 2021. This is not a verified minimum
