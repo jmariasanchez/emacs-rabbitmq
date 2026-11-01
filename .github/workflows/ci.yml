@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust build and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake pkg-config
+      - run: make build
+      - run: cargo test --workspace --locked --lib --bins
+      - run: cargo test --workspace --locked --doc
+
+  emacs:
+    name: Emacs bytecompilation and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Emacs
+        run: sudo apt-get update && sudo apt-get install -y emacs-nox
+      - run: make bytecompile ert
+
+  broker:
+    name: RabbitMQ 4.4 integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RMQ_REQUIRE_BROKER: "1"
+      RMQ_TEST_HOST: localhost
+      RMQ_TEST_AMQP_PORT: "5672"
+      RMQ_TEST_MGMT_URL: http://localhost:15672
+      RMQ_TEST_STREAM_PORT: "5552"
+    services:
+      rabbitmq:
+        image: rabbitmq:4.4-management
+        env:
+          RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: '-rabbitmq_stream advertised_host localhost -rabbit loopback_users []'
+        ports:
+          - 5672:5672
+          - 15672:15672
+          - 5552:5552
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install build and test dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake pkg-config emacs-nox curl
+      - name: Enable streams and wait for broker listeners
+        env:
+          BROKER_ID: ${{ job.services.rabbitmq.id }}
+        run: |
+          docker exec "$BROKER_ID" rabbitmq-plugins enable rabbitmq_stream
+          for attempt in $(seq 1 60); do
+            if docker exec "$BROKER_ID" rabbitmq-diagnostics -q check_running &&
+               curl --fail --silent --user guest:guest http://localhost:15672/api/overview > /dev/null &&
+               timeout 2 bash -c 'echo > /dev/tcp/127.0.0.1/5672' &&
+               timeout 2 bash -c 'echo > /dev/tcp/127.0.0.1/5552'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs "$BROKER_ID"
+          exit 1
+      - run: make build test
+      - name: ERT against the real broker (no skips)
+        run: |
+          emacs --batch -Q -L lisp -L tests/ert \
+            --eval '(setq rabbitmq-bridge-program (expand-file-name "target/debug/rabbitmq-bridge"))' \
+            -l rabbitmq-test \
+            --eval '(advice-add (quote ert-skip) :override (lambda (&rest reasons) (error "Integration test skipped: %S" reasons)))' \
+            --eval '(ert-run-tests-batch-and-exit (quote (tag :integration)))'
+      - name: Broker logs on failure
+        if: failure()
+        env:
+          BROKER_ID: ${{ job.services.rabbitmq.id }}
+        run: docker logs "$BROKER_ID"
