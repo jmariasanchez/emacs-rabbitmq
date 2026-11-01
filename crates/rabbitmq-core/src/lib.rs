@@ -16,6 +16,7 @@
 pub mod buffer;
 pub mod capabilities;
 pub mod error;
+pub mod events;
 pub mod message;
 pub mod profile;
 pub mod redact;

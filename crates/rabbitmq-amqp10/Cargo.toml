@@ -10,6 +10,7 @@ rust-version.workspace = true
 rabbitmq-core.workspace = true
 fe2o3-amqp = { workspace = true, features = ["rustls"] }
 tokio.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 
